@@ -12,9 +12,4 @@
     <InternalsVisibleTo Include="ColorfulLedKeyboard.Tray.Wpf" />
   </ItemGroup>
 
-  <!-- LightbarDetector 读 HKLM\HARDWARE\DESCRIPTION\System\BIOS（net8.0 无内置注册表 API） -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
-  </ItemGroup>
-
 </Project>

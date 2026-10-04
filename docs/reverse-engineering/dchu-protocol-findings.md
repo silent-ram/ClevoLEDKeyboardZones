@@ -249,8 +249,11 @@ clevo-xsm-wmi 的 `kb_full_color__set_color` 在机型带灯带时（`KB_HAS_EXT
 （ZONE_3 注释 "Unused on all known Clevo devices"）。
 
 带灯带机型（clevo-xsm-wmi DMI 表 `kb_full_color_with_extra_ops`）：
-P870DM、P7xxDM(-G)、P750ZM、P17SM-A 等（实现时从归档源码完整提取，后续按用户反馈追加）。
-检测：注册表 `HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemProductName` 前缀匹配。
+P870DM、P7xxDM(-G)、P750ZM、P17SM-A 等（完整清单见归档源码）。
+
+> 设计决策（2026-10-04）：**本仓库不实现机型检测**（曾按注册表
+> `HKLM\HARDWARE\DESCRIPTION\System\BIOS\SystemProductName`/`BaseBoardProduct` 前缀匹配，
+> 已移除）。灯带（zone 3）是否下发完全由调用方组装 zones 时决定。
 
 ### 9.5 亮度
 

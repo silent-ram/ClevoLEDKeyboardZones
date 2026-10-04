@@ -37,7 +37,7 @@ public static class DchuZoneProtocol
 
     /// <summary>
     /// 静态应用序列：[0x10000000, 各区颜色按 zone 升序（zone 可含 3=灯带，升序后自然排最后）, 亮度]。
-    /// 灯带是否入列由调用方（<see cref="DchuKeyboardDevice"/>，依据 LightbarDetector）决定；本函数只做编码。
+    /// 灯带是否入列由调用方组装 zones 时决定；本函数只做编码。
     /// </summary>
     public static IReadOnlyList<int> BuildZoneStaticSequence(IReadOnlyList<(int zone, RgbColor color)> zones, byte level)
     {

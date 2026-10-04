@@ -114,7 +114,7 @@ public sealed class DchuKeyboardDevice
 
     /// <summary>
     /// 应用静态三区状态（时序见第九节 9.6）：0x10000000 → 各区颜色（zone 升序）→ 亮度。
-    /// 灯带是否入列由调用方传入的 zones 决定（依据 <see cref="LightbarDetector"/>）。
+    /// 灯带（zone 3）是否入列由调用方传入的 zones 决定，本类不做机型检测。
     /// </summary>
     public void ApplyZoneStatic(IReadOnlyList<(int zone, RgbColor color)> zones, byte level)
     {

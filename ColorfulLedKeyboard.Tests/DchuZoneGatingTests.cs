@@ -209,24 +209,21 @@ public sealed class DchuZoneGatingTests
     }
 
     [Fact]
-    public void ApplyZoneStatic_LightbarModel_IncludesZone3_NonLightbar_DoesNot()
+    public void ApplyZoneStatic_Lightbar_IncludedOnlyWhenCallerPassesZone3()
     {
-        // 机型表命中（clevo-xsm-wmi DMI 表）→ 序列含 0xF3；未命中 → 不含
-        var lightbarProduct = "P870DM";
-        var singleZoneProduct = "P955ET1";
+        // 本仓库不做机型检测：灯带（zone 3）是否入列完全由调用方组装 zones 决定
+        var fakeWith = new FakeDchuTransport { Features1Result = unchecked((int)0x00400000u) };
+        var deviceWith = new DchuKeyboardDevice(fakeWith);
+        deviceWith.ApplyZoneStatic(BuildZones(includeLightbar: true, color: new RgbColor(255, 128, 0)), 126);
+        Assert.Contains(fakeWith.Sent, entry => IsLightbarArgs(entry.Args));
 
-        var fakeLightbar = new FakeDchuTransport { Features1Result = unchecked((int)0x00400000u) };
-        var deviceLightbar = new DchuKeyboardDevice(fakeLightbar);
-        deviceLightbar.ApplyZoneStatic(BuildZones(productName: lightbarProduct, color: new RgbColor(255, 128, 0)), 126);
-        Assert.Contains(fakeLightbar.Sent, entry => IsLightbarArgs(entry.Args));
-
-        var fakeSingle = new FakeDchuTransport { Features1Result = unchecked((int)0x00400000u) };
-        var deviceSingle = new DchuKeyboardDevice(fakeSingle);
-        deviceSingle.ApplyZoneStatic(BuildZones(productName: singleZoneProduct, color: new RgbColor(255, 128, 0)), 126);
-        Assert.DoesNotContain(fakeSingle.Sent, entry => IsLightbarArgs(entry.Args));
+        var fakeWithout = new FakeDchuTransport { Features1Result = unchecked((int)0x00400000u) };
+        var deviceWithout = new DchuKeyboardDevice(fakeWithout);
+        deviceWithout.ApplyZoneStatic(BuildZones(includeLightbar: false, color: new RgbColor(255, 128, 0)), 126);
+        Assert.DoesNotContain(fakeWithout.Sent, entry => IsLightbarArgs(entry.Args));
     }
 
-    private static List<(int zone, RgbColor color)> BuildZones(string productName, RgbColor color)
+    private static List<(int zone, RgbColor color)> BuildZones(bool includeLightbar, RgbColor color)
     {
         var zones = new List<(int zone, RgbColor color)>
         {
@@ -234,9 +231,9 @@ public sealed class DchuZoneGatingTests
             (1, color),
             (2, color),
         };
-        if (LightbarDetector.MatchesLightbar(productName))
+        if (includeLightbar)
         {
-            zones.Add((3, color)); // 灯带是否入列由调用方依据 LightbarDetector 决定
+            zones.Add((3, color)); // 灯带是否入列由调用方决定
         }
 
         return zones;
