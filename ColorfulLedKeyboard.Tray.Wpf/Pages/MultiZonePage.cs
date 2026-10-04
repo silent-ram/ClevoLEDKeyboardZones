@@ -137,6 +137,12 @@ public sealed class MultiZonePage : UserControl
             _loading = false;
         }
 
+        // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定
+        if (settings.OperatingMode != OperatingMode.MultiZone)
+        {
+            _statusText.Text = "提示：当前模式不是多分区——请先到 灯效设置 页勾选『多分区』再保存，否则这些配置不会生效。";
+        }
+
         RefreshStatus();
     }
 

@@ -40,7 +40,9 @@ dotnet build "%ROOT%\ColorfulLedKeyboard.Service\ColorfulLedKeyboard.Service.csp
 dotnet build "%ROOT%\ColorfulLedKeyboard.Tray.Wpf\ColorfulLedKeyboard.Tray.Wpf.csproj" -c Release --nologo -v q || goto :buildfail
 
 echo [3/3] starting...
-start "" "%SIM%"
+rem Three-zone view: the simulator answers the 3-zone capability probe as SUPPORTED,
+rem so the service multi-zone gate passes (single-zone view answers "unsupported").
+start "" "%SIM%" --view-zones
 ping -n 2 127.0.0.1 >nul
 rem Elevated: the service saves settings.json under ProgramData (ACL).
 powershell -NoProfile -Command "try { Start-Process -FilePath '%~dp0multizone-service.cmd' -Verb RunAs } catch { Write-Host ('ELEVATION DECLINED: ' + $_.Exception.Message) }"
