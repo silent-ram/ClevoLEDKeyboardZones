@@ -16,8 +16,10 @@ public partial class MainWindow : Window
 {
     private static readonly string[] EffectNames =
     [
-        "固定颜色", "RGB 循环", "单色呼吸", "循环呼吸", "脉冲", "心跳", "关闭"
+        "固定颜色", "RGB 循环", "单色呼吸", "循环呼吸", "脉冲", "心跳", "音乐模式", "关闭"
     ];
+
+    private const string MusicEffectName = "音乐模式";
 
     private const int ZoneExclusiveLightbar = unchecked((int)0xF3000000u);
 
@@ -30,6 +32,14 @@ public partial class MainWindow : Window
     private bool _threeZoneView;
     private ExternalControlServer? _externalServer;
     private bool _internalRunBeforeExternal;
+
+    // 音乐模式（绑定程序）：复刻 Worker.RunMusicAsync 的"已绑定播放器"路径——
+    // 电平 = 绑定进程的会话峰值，节拍包络/换色由 Core 的 MusicPulseController 驱动
+    private readonly AudioProgramProbe _audioProbe = new();
+    private readonly MusicSettings _musicSettings = new MusicSettings().Normalize();
+    private MusicPulseController? _musicController;
+    private int _boundPid;
+    private bool _suppressProgramSelection;
 
     public MainWindow(bool startInThreeZone = false, bool autostart = false, bool forceLightbar = false)
     {
@@ -65,6 +75,7 @@ public partial class MainWindow : Window
         {
             _timer.Stop();
             _externalServer?.Dispose();
+            _audioProbe.Dispose();
         };
     }
 
@@ -141,6 +152,12 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        if (IsMusicMode)
+        {
+            TickMusic();
+            return;
+        }
+
         _elapsedMs += _generator.IntervalMs * (FastForwardCheck.IsChecked == true ? 8 : 1);
         if (_threeZoneView)
         {
@@ -152,6 +169,112 @@ public partial class MainWindow : Window
             var color = _generator.NextAtElapsed(ClampBrightness(), _elapsedMs);
             _device.SetColor(color);
         }
+    }
+
+    private bool IsMusicMode => string.Equals(EffectBox.SelectedItem as string, MusicEffectName, StringComparison.Ordinal);
+
+    private void TickMusic()
+    {
+        var level = 0d;
+        if (_boundPid != 0)
+        {
+            var peak = _audioProbe.ReadPeak(_boundPid);
+            if (peak < 0)
+            {
+                ClearBinding("绑定已失效（进程或音频会话退出），请刷新后重新选择");
+            }
+            else
+            {
+                level = peak;
+            }
+        }
+
+        _musicController ??= new MusicPulseController();
+        var frame = _musicController.Next(
+            _musicSettings,
+            level,
+            _musicSettings.FollowSystemVolume ? _audioProbe.GetMasterVolumeScalar() : 1,
+            _musicSettings.Colors.Count);
+
+        // 复刻 Worker.RunMusicAsync 的包络→亮度映射（多色指数 0.55）
+        var colorCount = Math.Max(1, _musicSettings.Colors.Count);
+        var sourceColor = RgbColor.FromHex(_musicSettings.Colors[frame.ColorIndex % colorCount]);
+        var baseBrightness = _musicSettings.BaseBrightness;
+        var peakBrightness = _musicSettings.PeakBrightness;
+        var brightness = (int)Math.Clamp(
+            Math.Round(baseBrightness + (peakBrightness - baseBrightness) * Math.Pow(frame.Envelope, 0.55)),
+            baseBrightness, peakBrightness);
+        _device.SetColor(sourceColor.Scale(brightness));
+
+        MusicLevelBar.Width = Math.Clamp(level, 0, 1) * 220;
+    }
+
+    private void RefreshPrograms()
+    {
+        _audioProbe.Refresh();
+        _suppressProgramSelection = true;
+        try
+        {
+            ProgramBox.ItemsSource = null;
+            ProgramBox.Items.Refresh();
+            ProgramBox.ItemsSource = _audioProbe.Entries;
+            ProgramBox.SelectedIndex = -1;
+        }
+        finally
+        {
+            _suppressProgramSelection = false;
+        }
+
+        if (_boundPid != 0)
+        {
+            if (_audioProbe.Entries.Any(entry => entry.ProcessId == _boundPid))
+            {
+                // 刷新后绑定仍在：恢复选中项
+                for (var index = 0; index < _audioProbe.Entries.Count; index++)
+                {
+                    if (_audioProbe.Entries[index].ProcessId == _boundPid)
+                    {
+                        ProgramBox.SelectedIndex = index;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                ClearBinding("原绑定进程已不在音频会话列表中，请重新选择");
+            }
+        }
+        else
+        {
+            ProgramHintText.Text = "未绑定：电平恒为 0，键盘保持底亮度常亮。选择进程即绑定，随其声音起伏。";
+        }
+    }
+
+    private void ClearBinding(string reason)
+    {
+        _boundPid = 0;
+        if (!_suppressProgramSelection)
+        {
+            _suppressProgramSelection = true;
+            ProgramBox.SelectedIndex = -1;
+            _suppressProgramSelection = false;
+        }
+
+        MusicLevelBar.Width = 0;
+        ProgramHintText.Text = reason;
+    }
+
+    private void OnRefreshPrograms(object sender, RoutedEventArgs e) => RefreshPrograms();
+
+    private void OnProgramSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressProgramSelection || ProgramBox.SelectedItem is not AudioProgramProbe.Entry entry)
+        {
+            return;
+        }
+
+        _boundPid = entry.ProcessId;
+        ProgramHintText.Text = $"已绑定 {entry.ProcessName} (pid {entry.ProcessId})——键盘随其峰值电平起伏；进程退出后绑定自动失效。";
     }
 
     private void TickThreeZone()
@@ -346,6 +469,19 @@ public partial class MainWindow : Window
         _settings = BuildSettings(name);
         _generator = new LightingFrameGenerator(_settings);
         _elapsedMs = 0;
+
+        if (MusicPanel is null)
+        {
+            return; // XAML 初始化期间
+        }
+
+        var isMusic = string.Equals(name, MusicEffectName, StringComparison.Ordinal);
+        MusicPanel.Visibility = isMusic ? Visibility.Visible : Visibility.Collapsed;
+        _musicController = isMusic ? new MusicPulseController() : null;
+        if (isMusic)
+        {
+            RefreshPrograms();
+        }
     }
 
     private void OnBrightnessChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

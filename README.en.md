@@ -38,7 +38,9 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
   **no model detection**.
 - **Virtual keyboard simulator** (dev-only, never shipped): single-zone view mirrors the
   Worker pipeline; three-zone view drives zones/lightbar independently; B/R channel-swap
-  check; fast-forward and frame stepping.
+  check; fast-forward and frame stepping. A built-in music mode can **bind any local program
+  that is playing sound** (WASAPI session peak) and replays the real music pipeline's
+  bound-player beat path — no real keyboard needed to observe the response.
 - **External control**: the simulator acts as a virtual keyboard driven by this fork's service
   over a named pipe (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
   path unaffected), see

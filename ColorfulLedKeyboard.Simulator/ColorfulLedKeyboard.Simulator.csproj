@@ -15,6 +15,11 @@
     <ProjectReference Include="..\ColorfulLedKeyboard.Core\ColorfulLedKeyboard.Core.csproj" />
   </ItemGroup>
 
+  <!-- 音乐模式（绑定程序）读取进程会话峰值电平，与 Service/Tray 同版本 -->
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
   <!-- 本机装有厂商驱动时自动复制到输出目录，供能力探测参数与真实传输读取（仅读操作，零 EC 写入） -->
   <ItemGroup>
     <None Include="$(ProgramFiles)\ClevoLEDKeyboardControl\Service\InsydeDCHU.dll"

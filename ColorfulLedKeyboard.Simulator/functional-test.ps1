@@ -55,6 +55,8 @@ function Set-Check($root, $id, [bool]$on) {
   $tp = $e.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
   $want = if ($on) { [System.Windows.Automation.ToggleState]::On } else { [System.Windows.Automation.ToggleState]::Off }
   if ($tp.Current.ToggleState -ne $want) { $tp.Toggle(); Start-Sleep -Milliseconds 200 }
+  if ($tp.Current.ToggleState -ne $want) { $tp.Toggle(); Start-Sleep -Milliseconds 300 }  # 负载下重试一次
+  if ($tp.Current.ToggleState -ne $want) { throw "toggle failed: $id" }
 }
 function Select-Effect($root, $itemName) {
   $combo = Find-ById $root "EffectBox"
@@ -85,7 +87,8 @@ function Get-WindowBitmap($p) {
   $g.Dispose()
   return $bmp
 }
-# 三个分区列的采样点（占窗口比例）：列区 x 5%~40%、y 17%~49%；灯带 y ~56.5%
+# 三个分区列的采样点（占窗口比例）：列区 x 5%~40%、y 17%~49%；灯带 y ~46%
+# （2026-10-05 重校准：窗口加高至 820 后按实拍重定；窗口顶部对齐布局，比例随 DPI 等比缩放）
 function Get-Pixels($bmp) {
   $w = $bmp.Width; $h = $bmp.Height
   function Px($fx, $fy) { return $bmp.GetPixel([int]($w*$fx), [int]($h*$fy)) }
@@ -93,7 +96,7 @@ function Get-Pixels($bmp) {
     zone0 = Px 0.115 0.33
     zone1 = Px 0.230 0.33
     zone2 = Px 0.345 0.33
-    lightbar = Px 0.42 0.565
+    lightbar = Px 0.42 0.462
   }
 }
 function IsDark($px) { return ($px.R -le 20 -and $px.G -le 24 -and $px.B -le 40) }
@@ -178,11 +181,11 @@ $bmp.Dispose()
 # 暂停 → 记录 zone0 → 勾选互换 → 帧步进(暂停态推进单帧，色相漂移<1°) → 比对 R/B 互换
 # 容差取 14/10：帧步进理论上仅漂 1.2°，负载下暂停派发可能迟到造成 ~7° 漂移（2026-10-04 实测），
 # 而 B/R 互换的判别签名跨度是整个 R/B 通道（≈120°），宽容差不掩盖错误通道
-Invoke-Button $root "StartButton"; Start-Sleep -Milliseconds 600  # 暂停，冻结 _elapsedMs
+Invoke-Button $root "StartButton"; Start-Sleep -Milliseconds 800  # 暂停，冻结 _elapsedMs
 $bmp = Get-WindowBitmap $p; $before = (Get-Pixels $bmp).zone0; $bmp.Dispose()
 Set-Check $root "SwapBrCheck" $true
 Invoke-Button $root "StepButton"  # 帧步进 ×1：elapsed 前进一个 interval 后重渲染
-Start-Sleep -Milliseconds 800
+Start-Sleep -Milliseconds 1000
 $bmp = Get-WindowBitmap $p; $after = (Get-Pixels $bmp).zone0; $bmp.Dispose()
 $swapped = (Near @{R=$before.B; G=$before.G; B=$before.R} $after 14) -and (-not (Near $before $after 10))
 Report "T7 通道序检验(B/R互换)" $swapped "前=($($before.R),$($before.G),$($before.B)) 后=($($after.R),$($after.G),$($after.B))"
@@ -207,6 +210,26 @@ $ok8 = ($status1 -like "*等待服务连接*") -and $enabled1 -and
        ($status2 -like "*服务已连接*") -and (-not $enabled2) -and
        ($status3 -like "*等待服务连接*") -and $enabled3
 Report "T8 外接控制状态机" $ok8 "前='$status1' 中='$status2' 后='$status3'"
+Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# ============ T9 音乐模式（绑定面板 + 零电平底亮度常亮） ============
+# 环境无绑定 → 电平恒 0 → 包络 0 → 首色 #FF0000 @ 底亮度 25% = (63,0,0)，确定可断言；
+# 真实绑定随声音起伏属人工观察项（自动化环境无法保证有声音）
+$p = Start-Sim
+$root = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
+Select-Effect $root "音乐模式"
+Start-Sleep -Milliseconds 500
+# StackPanel 不在 UIA 控件树，用面板内的下拉框判断面板已展开
+$programBox = Find-ById $root "ProgramBox"
+$panelShown = ($null -ne $programBox) -and (-not $programBox.Current.IsOffscreen)
+$hint = Get-TextById $root "ProgramHintText"
+Invoke-Button $root "StartButton"
+Start-Sleep -Seconds 2
+$bmp = Get-WindowBitmap $p; $px = Get-Pixels $bmp
+$expectMusic = @{ R = 63; G = 0; B = 0 }
+$litIdle = (Near $px.zone0 $expectMusic 2) -and (Near $px.zone1 $expectMusic 2) -and (Near $px.zone2 $expectMusic 2)
+Report "T9 音乐模式(绑定面板+零电平底亮度)" ($panelShown -and $litIdle -and ($hint -like "*未绑定*")) "面板可见=$panelShown 实测=($($px.zone0.R),$($px.zone0.G),$($px.zone0.B)) 期望=(63,0,0) 提示='$($hint.Substring(0, [Math]::Min(24, $hint.Length)))…'"
+$bmp.Dispose()
 Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
 
 # ============ 汇总 ============
