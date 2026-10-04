@@ -38,19 +38,13 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (SimulatorPipeTransport.Enabled)
-        {
-            // 外接模式（实验，环境变量 CLEVO_LED_SIMULATOR_PIPE=1）：DCHU 命令转发给虚拟键盘模拟器，
-            // 零真实 EC 写。IPC 管道名与已安装主服务相同，这里不托管，避免抢占主 Tray 的控制通道；
-            // 设置变化经文件监视感知，音频状态读共享文件，与主服务并行互补。
-            _logger.LogInformation(
-                "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard, IPC hosting skipped",
-                SimulatorPipeTransport.EnableEnvironmentVariable);
-        }
-        else
-        {
-            _ipcServer.Start();
-        }
+        // 外接模式（实验，环境变量 CLEVO_LED_SIMULATOR_PIPE=1）：DCHU 命令转发给虚拟键盘模拟器，
+        // 零真实 EC 写。IPC 托管在分支专用管道（标准管道被已安装主服务占用），本仓库托盘的
+        // 保存/读取经分支管道到达本服务；音频状态读共享文件，与主服务并行互补。
+        _logger.LogInformation(
+            "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard; IPC hosted on {ForkPipe}",
+            SimulatorPipeTransport.EnableEnvironmentVariable, ServiceIpc.ForkPipeName);
+        _ipcServer.Start();
 
         EnsureConfigWatcher();
         var audioStatusReconcile = ReconcileAudioStatusAsync(stoppingToken);
