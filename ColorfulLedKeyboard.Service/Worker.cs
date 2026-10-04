@@ -1031,7 +1031,7 @@ public class Worker : BackgroundService
 
     private void MarkSettingsChanged(string? fileName)
     {
-        if (string.Equals(fileName, settingsFileName, StringComparison.OrdinalIgnoreCase) ||
+        if (string.Equals(fileName, Path.GetFileName(AppPaths.SettingsPath), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fileName, AppPaths.NotificationFlashStateFileName, StringComparison.OrdinalIgnoreCase))
         {
             _settingsChanged = true;
