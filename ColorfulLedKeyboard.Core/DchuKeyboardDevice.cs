@@ -17,9 +17,11 @@ namespace ColorfulLedKeyboard.Core;
 /// </summary>
 public sealed class DchuKeyboardDevice
 {
-    private const int SetDchuLedCommand = 103; // SCMD 0x67
-    private const int GetBiosFeatures1Command = 0x52; // GET_BIOS_FEATURES_1（第九节 9.9，读类，零 EC 写）
+    private const int GetBiosFeatures1Command = DchuZoneProtocol.GetBiosFeatures1Command; // GET_BIOS_FEATURES_1（第九节 9.9，读类，零 EC 写）
     private const int KeyboardFeatures3ZoneRgb = 0x00400000;
+
+    /// <summary>SCMD 写命令（0x67），常量权威定义在 <see cref="DchuZoneProtocol.SetDchuLedCommand"/>。</summary>
+    internal const int SetDchuLedCommand = DchuZoneProtocol.SetDchuLedCommand;
 
     private readonly IDchuTransport _transport;
     private bool? _has3ZoneKeyboard;
@@ -46,16 +48,12 @@ public sealed class DchuKeyboardDevice
     }
 
     /// <summary>
-    /// 向 SCMD 0x67 Local7=0xF 路径的指定槽位写入颜色。
-    /// ARGS 位字段：bit 31..28 = Local7 = 0xF；bit 27..24 = Local4 = slot（0..2）；
-    /// bit 23..16 = B；bit 15..8 = R；bit 7..0 = G（BRG 字节序，与 TUXEDO 三区常量一致）。
+    /// 向 SCMD 0x67 Local7=0xF 路径的指定槽位写入颜色（slot 0..2）。
+    /// 编码与三区协议 PackZoneColorArgs 同一 BRG 字节序（zone0..2 等价于左/中/右分区写），
+    /// 统一委托，避免两份编码漂移。
     /// </summary>
-    internal static int BuildSequenceSlotArgs(RgbColor color, int slot)
-    {
-        var commandByte = 0xF0 | (slot & 0x0F);
-        var encodedColor = (color.B << 16) | (color.R << 8) | color.G;
-        return (commandByte << 24) | encodedColor;
-    }
+    internal static int BuildSequenceSlotArgs(RgbColor color, int slot) =>
+        DchuZoneProtocol.PackZoneColorArgs(slot, color);
 
     private void WriteSequenceSlot(RgbColor color, int slot)
     {

@@ -8,6 +8,12 @@ namespace ColorfulLedKeyboard.Core;
 /// </summary>
 public static class DchuZoneProtocol
 {
+    /// <summary>SCMD 写命令（0x67）：单区三槽位与三区/灯带/亮度共用的总入口。</summary>
+    public const int SetDchuLedCommand = 103;
+
+    /// <summary>能力探测读命令 GET_BIOS_FEATURES_1（第九节 9.9，读类，零 EC 写）。</summary>
+    public const int GetBiosFeatures1Command = 0x52;
+
     /// <summary>
     /// 三区/灯带颜色：ARGS = (0xF0|zone)&lt;&lt;24 | B&lt;&lt;16 | R&lt;&lt;8 | G。
     /// zone：0 左 / 1 中 / 2 右 / 3 灯带；越界抛 <see cref="ArgumentOutOfRangeException"/>。

@@ -14,8 +14,6 @@ namespace ColorfulLedKeyboard.Tests;
 /// </summary>
 public sealed class DchuZoneGatingTests
 {
-    private const int SetDchuLedCommand = 103; // SCMD 0x67
-
     private static bool IsLightbarArgs(int args) => (uint)(args & 0xFF000000) == 0xF3000000u;
     private static bool IsZoneBrightnessArgs(int args) => (uint)(args & 0xFF000000) == 0xF4000000u;
     private static bool IsCustomModeArgs(int args) => args == DchuZoneProtocol.PackCustomModeArgs();
@@ -34,18 +32,15 @@ public sealed class DchuZoneGatingTests
     };
 
     /// <summary>复刻 Worker 单区效果管线（LightingFrameGenerator.Next → SetColor），帧数固定以便逐字节比对。</summary>
-    private static List<int> RunSingleZonePipeline(DchuKeyboardDevice device, int frames = 64)
+    private static void RunSingleZonePipeline(DchuKeyboardDevice device, int frames = 64)
     {
         var settings = BreathingSettings();
         var generator = new LightingFrameGenerator(settings);
-        var emitted = new List<int>(frames * 3);
         for (var frame = 0; frame < frames; frame++)
         {
             var color = generator.NextAtElapsed(settings.Brightness, frame * generator.IntervalMs);
             device.SetColor(color);
         }
-
-        return emitted;
     }
 
     [Fact]
@@ -59,7 +54,7 @@ public sealed class DchuZoneGatingTests
         RunSingleZonePipeline(device);
 
         Assert.NotEmpty(fake.Sent);
-        Assert.All(fake.Sent, entry => Assert.Equal(SetDchuLedCommand, entry.Command));
+        Assert.All(fake.Sent, entry => Assert.Equal(DchuZoneProtocol.SetDchuLedCommand, entry.Command));
         Assert.DoesNotContain(fake.Sent, entry => IsZoneExclusive(entry.Args));
     }
 
@@ -210,7 +205,7 @@ public sealed class DchuZoneGatingTests
             0xF2FF0000u,        // zone2 蓝
             0xF400003Fu,        // 第 3 步亮度
         ], fake.Sent.Select(entry => (uint)entry.Args));
-        Assert.All(fake.Sent, entry => Assert.Equal(SetDchuLedCommand, entry.Command));
+        Assert.All(fake.Sent, entry => Assert.Equal(DchuZoneProtocol.SetDchuLedCommand, entry.Command));
     }
 
     [Fact]

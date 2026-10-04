@@ -28,7 +28,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(30) };
     private double _elapsedMs;
     private bool _threeZoneView;
-    private bool _viewLabelDirty = true;
 
     public MainWindow(bool startInThreeZone = false, bool autostart = false, bool forceLightbar = false)
     {
@@ -171,12 +170,12 @@ public partial class MainWindow : Window
 
     private void OnCommandSent(int command, int args)
     {
-        if (command != 103)
+        if (command != DchuZoneProtocol.SetDchuLedCommand)
         {
             return; // 0x67 以外不渲染
         }
 
-        LastCommandText.Text = $"最近命令：0x67 0x{(uint)args:X8}";
+        LastCommandText.Text = $"最近命令：0x{DchuZoneProtocol.SetDchuLedCommand:X2} 0x{(uint)args:X8}";
 
         // 整字模式表（9.7）优先 —— 这些值在位字段解析下会与单区语义混淆
         var fullWordMode = args switch
@@ -283,7 +282,6 @@ public partial class MainWindow : Window
     private void OnToggleView(object sender, RoutedEventArgs e)
     {
         _threeZoneView = !_threeZoneView;
-        _viewLabelDirty = true;
         RebuildDevice();
         UpdateViewButton();
         ForceLightbarCheck.IsEnabled = _threeZoneView;

@@ -2,6 +2,8 @@
 > **本仓库为多分区 / 灯带的实验性二开（experimental fork）。**
 > 稳定版本与正式发布请前往主仓库：**https://github.com/silent-ram/ClevoLEDKeyboardControl**
 > 本仓库不含任何 Release，代码随时可能大幅变动，请勿在日常使用中依赖。
+> 版本约定：若将来手工分发构建产物，版本号一律与主仓库 Release 错开（如 `3.6.0-zone.1`），
+> 避免自动更新提醒与主仓库版本串线。
 
 <div align="center">
 

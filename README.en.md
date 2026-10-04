@@ -2,6 +2,8 @@
 > **This repository is an experimental multi-zone / lightbar fork.**
 > For the stable version and official releases, go to the main repository: **https://github.com/silent-ram/ClevoLEDKeyboardControl**
 > No Releases are published here; the code may change drastically at any time.
+> Versioning: any manually distributed builds must use version numbers disjoint from the main
+> repository's releases (e.g. `3.6.0-zone.1`) so update notifications never cross wires.
 
 <div align="center">
 
