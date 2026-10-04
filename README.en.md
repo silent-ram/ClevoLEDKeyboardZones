@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **This repository is an experimental multi-zone / lightbar fork.**
+> For the stable version and official releases, go to the main repository: **https://github.com/silent-ram/ClevoLEDKeyboardControl**
+> No Releases are published here; the code may change drastically at any time.
+
 <div align="center">
 
 # ClevoLEDKeyboardControl
