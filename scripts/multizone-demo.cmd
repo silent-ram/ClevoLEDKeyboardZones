@@ -1,63 +1,57 @@
 @echo off
 rem ============================================================
 rem  Multi-zone local demo launcher (dev only, zones fork)
-rem  Builds (Release), then starts: simulator + service (elevated,
-rem  simulator-pipe mode) + tray with the settings window open.
-rem  Nothing here writes to the real EC: the service forwards all
-rem  DCHU commands to the simulator over a named pipe.
+rem  Self-elevating (one UAC prompt): the service needs to write
+rem  status files under ProgramData, and cleanup must be able to
+rem  kill a previously elevated service.
 rem
-rem  Next steps after launch:
-rem    1. In the settings window: lighting page -> mode "Multi-zone".
+rem  Isolation: the demo stack uses its own settings file
+rem  (%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json),
+rem  so the installed production service never sees multi-zone
+rem  settings - your real keyboard and production config stay
+rem  untouched. All DCHU commands go to the simulator (no real EC).
+rem
+rem  Steps after launch:
+rem    1. Settings window: lighting page -> mode "Multi-zone".
 rem    2. Multi-zone page: configure left/center/right/lightbar.
 rem    3. Bottom bar: Apply. The simulator renders the zones.
-rem
-rem  Notes:
-rem    - The UAC prompt is required for the service to write its status
-rem      files under ProgramData.
-rem    - The demo stack uses an ISOLATED settings file
-rem      (%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json), so
-rem      the installed production service never sees multi-zone settings:
-rem      your real keyboard and production config stay untouched.
-rem      ProgramData (ACL) and STOPS the installed production service while
-rem      testing - it treats "MultiZone" settings as corrupt and would revert
-rem      every save. The production service is restarted automatically when
-rem      the demo service console is closed.
-rem    - To restore the production tray afterwards, run:
-rem        "C:\Program Files\ClevoLEDKeyboardControl\ColorfulLedKeyboard.Tray.exe"
 rem ============================================================
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+  echo Requesting administrator rights - please accept the UAC prompt...
+  powershell -NoProfile -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs } catch { Write-Host ('ELEVATION DECLINED: ' + $_.Exception.Message) }"
+  exit /b
+)
+cd /d "%~dp0"
 setlocal
-set ROOT=%~dp0..
-set SIM=%ROOT%\ColorfulLedKeyboard.Simulator\bin\Release\net8.0-windows\ColorfulLedKeyboard.Simulator.exe
-set SVC=%ROOT%\ColorfulLedKeyboard.Service\bin\Release\net8.0-windows\ColorfulLedKeyboard.Service.exe
-set TRAY=%ROOT%\ColorfulLedKeyboard.Tray.Wpf\bin\Release\net8.0-windows10.0.22621.0\ColorfulLedKeyboard.Tray.exe
-rem Isolated settings file for the demo stack (tray + service both inherit this):
+set ROOT=%~dp0
+set SIM=%ROOT%ColorfulLedKeyboard.Simulator\bin\Release\net8.0-windows\ColorfulLedKeyboard.Simulator.exe
+set SVC=%ROOT%ColorfulLedKeyboard.Service\bin\Release\net8.0-windows\ColorfulLedKeyboard.Service.exe
+set TRAY=%ROOT%ColorfulLedKeyboard.Tray.Wpf\bin\Release\net8.0-windows10.0.22621.0\ColorfulLedKeyboard.Tray.exe
+set CLEVO_LED_SIMULATOR_PIPE=1
 set CLEVO_LED_SETTINGS_PATH=%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json
 
-echo [1/3] stopping leftovers (running apps lock the build outputs)...
+echo [1/4] stopping leftovers (elevated cleanup - kills old demo instances too)...
 taskkill /f /im ColorfulLedKeyboard.Simulator.exe >nul 2>&1
 taskkill /f /im ColorfulLedKeyboard.Tray.exe >nul 2>&1
-taskkill /f /fi "WINDOWTITLE eq ClevoLEDKeyboardZones Service*" >nul 2>&1
-ping -n 2 127.0.0.1 >nul
+taskkill /f /im ColorfulLedKeyboard.Service.exe >nul 2>&1
+ping -n 3 127.0.0.1 >nul
 
-echo [2/3] building (Release)...
-dotnet build "%ROOT%\ColorfulLedKeyboard.Simulator\ColorfulLedKeyboard.Simulator.csproj" -c Release --nologo -v q || goto :buildfail
-dotnet build "%ROOT%\ColorfulLedKeyboard.Service\ColorfulLedKeyboard.Service.csproj" -c Release --nologo -v q || goto :buildfail
-dotnet build "%ROOT%\ColorfulLedKeyboard.Tray.Wpf\ColorfulLedKeyboard.Tray.Wpf.csproj" -c Release --nologo -v q || goto :buildfail
+echo [2/4] building (Release)...
+dotnet build "%ROOT%ColorfulLedKeyboard.Simulator\ColorfulLedKeyboard.Simulator.csproj" -c Release --nologo -v q || goto :buildfail
+dotnet build "%ROOT%ColorfulLedKeyboard.Service\ColorfulLedKeyboard.Service.csproj" -c Release --nologo -v q || goto :buildfail
+dotnet build "%ROOT%ColorfulLedKeyboard.Tray.Wpf\ColorfulLedKeyboard.Tray.Wpf.csproj" -c Release --nologo -v q || goto :buildfail
 
-echo [3/3] starting...
-rem Three-zone view: the simulator answers the 3-zone capability probe as SUPPORTED,
-rem so the service multi-zone gate passes (single-zone view answers "unsupported").
+echo [3/4] starting simulator + tray...
 start "" "%SIM%" --view-zones
 ping -n 2 127.0.0.1 >nul
-rem Elevated: the service saves settings.json under ProgramData (ACL).
-powershell -NoProfile -Command "try { Start-Process -FilePath '%~dp0multizone-service.cmd' -Verb RunAs } catch { Write-Host ('ELEVATION DECLINED: ' + $_.Exception.Message) }"
-ping -n 3 127.0.0.1 >nul
 start "" "%TRAY%" --settings
+
+echo [4/4] starting service in this console (close the window or press Ctrl+C to stop)...
+"%SVC%"
 echo.
-echo Started: simulator + service (elevated, simulator pipe mode) + tray.
-echo Check the service console says: IPC hosted on ClevoLEDKeyboardControlZones.v2
-echo To stop: close the service console window (production service auto-restarts),
-echo then quit the tray and simulator.
+echo Service exited. Demo stopped - the production service was never stopped.
+echo Production tray: "C:\Program Files\ClevoLEDKeyboardControl\ColorfulLedKeyboard.Tray.exe"
 pause
 exit /b 0
 
