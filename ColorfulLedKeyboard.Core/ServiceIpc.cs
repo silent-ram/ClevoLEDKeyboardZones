@@ -6,16 +6,42 @@ namespace ColorfulLedKeyboard.Core;
 
 public static class ServiceIpc
 {
+    /// <summary>标准管道：主仓库（生产）服务与所有托盘共用。</summary>
     public const string PipeName = "ClevoLEDKeyboardControl.v2";
+
+    /// <summary>
+    /// 分支专用管道：Zones 服务在外接模式（模拟器管道）下不托管标准管道（被主仓库服务占用），
+    /// 改在此管道上托管 IPC。客户端按 <see cref="PipeNamesInOrder"/> 顺序尝试——分支管道不存在时
+    /// CreateFile 立即失败（无连接超时惩罚），因此正式托盘/服务完全不受影响。
+    /// </summary>
+    public const string ForkPipeName = "ClevoLEDKeyboardControlZones.v2";
+
+    /// <summary>客户端尝试顺序：分支管道优先（开发服务），回退标准管道（生产服务）。</summary>
+    public static readonly string[] PipeNamesInOrder = [ForkPipeName, PipeName];
+
     public const int ProtocolVersion = 1;
     public const int MaximumMessageBytes = 1024 * 1024;
 
     public static bool TryRequest<TRequest, TResponse>(string kind, TRequest payload, out TResponse? response, int timeoutMs = 750)
     {
         response = default;
+        foreach (var pipeName in PipeNamesInOrder)
+        {
+            if (TryRequestOnPipe(pipeName, kind, payload, out response, timeoutMs))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryRequestOnPipe<TRequest, TResponse>(string pipeName, string kind, TRequest payload, out TResponse? response, int timeoutMs)
+    {
+        response = default;
         try
         {
-            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.None);
+            using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.None);
             pipe.Connect(timeoutMs);
             var request = JsonSerializer.SerializeToUtf8Bytes(new IpcEnvelope<TRequest>(ProtocolVersion, kind, payload));
             if (request.Length > MaximumMessageBytes) return false;

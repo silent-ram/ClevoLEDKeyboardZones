@@ -55,7 +55,9 @@ public sealed class ServiceIpcServer : IDisposable
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
             PipeAccessRights.FullControl, AccessControlType.Allow));
-        return NamedPipeServerStreamAcl.Create(ServiceIpc.PipeName, PipeDirection.InOut, 8,
+        // 分支专用管道：外接模式服务监听此管道（标准管道被主仓库服务占用），客户端
+        // （本仓库托盘）按 分支→标准 顺序尝试，生产端不受影响（见 ServiceIpc.ForkPipeName）。
+        return NamedPipeServerStreamAcl.Create(ServiceIpc.ForkPipeName, PipeDirection.InOut, 8,
             PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 4096, 4096, security);
     }
 

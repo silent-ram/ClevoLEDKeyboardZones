@@ -35,8 +35,11 @@ dotnet run --project ColorfulLedKeyboard.Service
   - 生产路径（未设环境变量）逐字节保持既有行为：`SetColor` 三槽位写，绝不出现分区命令。
     真实三区机型的效果管线属后续工作（见 dchu-protocol-findings.md 9.9：能力位仅必要条件，
     不得作为运行时门控）。
-- **服务侧 IPC 托管跳过**：外接模式不再启动 `ServiceIpcServer`（管道名与已安装主服务相同，
-  避免抢占主项目托盘的控制通道）；设置变化仍经文件监视感知，音频状态仍读共享文件。
+- **服务侧 IPC 托管在分支专用管道** `ClevoLEDKeyboardControlZones.v2`（标准管道
+  `ClevoLEDKeyboardControl.v2` 被已安装主服务占用，无法重复创建）。客户端按"分支→标准"
+  顺序尝试：本仓库托盘连到本仓库服务，主仓库托盘对分支管道的连接立即失败后回退标准
+  管道，生产端不受影响。托盘的设置保存经 IPC 由本服务落盘（LocalSystem 权限不受
+  ProgramData 目录 ACL 限制）并即时生效。
 - **模拟器侧**：管道服务端随窗口创建启动；断连自动回到等待，服务端重启自动重连。
 
 ## 线路协议（UTF-8 按行）

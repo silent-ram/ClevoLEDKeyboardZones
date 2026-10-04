@@ -162,7 +162,7 @@ public sealed class MultiZonePage : UserControl
         settings.MultiZone = multi.Normalize();
     }
 
-    public void ResetDirty() { }
+    public void ResetDirty() => _dirty = false;
 
     public bool IsDirty => _loading ? false : _dirty;
     private bool _dirty;

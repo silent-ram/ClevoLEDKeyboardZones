@@ -44,6 +44,7 @@ public static class AppPaths
 
     public static string MultiZoneStatusPath => Path.Combine(ProgramDataDirectory, MultiZoneStatusFileName);
 
+
     public static string MediaPlaybackStatePath => Path.Combine(ProgramDataDirectory, MediaPlaybackStateFileName);
 
     public static string AudioApplicationsStatePath => Path.Combine(ProgramDataDirectory, AudioApplicationsStateFileName);
