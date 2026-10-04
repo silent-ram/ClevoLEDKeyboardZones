@@ -25,7 +25,15 @@ public static class AppPaths
     public static string UserDataDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), ProgramDataFolderName);
 
-    public static string SettingsPath => Path.Combine(ProgramDataDirectory, SettingsFileName);
+    /// <summary>开发/演示隔离：CLEVO_LED_SETTINGS_PATH 指向自定义设置文件时，实验栈
+    /// （本仓库托盘+服务）整体改用该文件，与已安装生产服务的 settings.json 彻底隔离——
+    /// 生产服务的旧解析器会把 MultiZone 当损坏配置还原，共享同一路径必然互相覆盖。</summary>
+    public const string SettingsPathEnvironmentVariable = "CLEVO_LED_SETTINGS_PATH";
+
+    public static string SettingsPath =>
+        Environment.GetEnvironmentVariable(SettingsPathEnvironmentVariable) is { Length: > 0 } custom
+            ? custom
+            : Path.Combine(ProgramDataDirectory, SettingsFileName);
 
     public static string UpdateStatePath => Path.Combine(UserDataDirectory, UpdateStateFileName);
 

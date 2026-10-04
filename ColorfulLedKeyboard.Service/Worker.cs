@@ -1013,8 +1013,11 @@ public class Worker : BackgroundService
 
     private void EnsureConfigWatcher()
     {
-        Directory.CreateDirectory(AppPaths.ProgramDataDirectory);
-        _watcher = new FileSystemWatcher(AppPaths.ProgramDataDirectory)
+        // 跟随实际设置文件（CLEVO_LED_SETTINGS_PATH 重定向后监视其所在目录）
+        var settingsDirectory = Path.GetDirectoryName(AppPaths.SettingsPath);
+        var settingsFileName = Path.GetFileName(AppPaths.SettingsPath);
+        Directory.CreateDirectory(settingsDirectory!);
+        _watcher = new FileSystemWatcher(settingsDirectory!)
         {
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size | NotifyFilters.FileName,
             EnableRaisingEvents = true
@@ -1028,7 +1031,7 @@ public class Worker : BackgroundService
 
     private void MarkSettingsChanged(string? fileName)
     {
-        if (string.Equals(fileName, AppPaths.SettingsFileName, StringComparison.OrdinalIgnoreCase) ||
+        if (string.Equals(fileName, settingsFileName, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(fileName, AppPaths.NotificationFlashStateFileName, StringComparison.OrdinalIgnoreCase))
         {
             _settingsChanged = true;
