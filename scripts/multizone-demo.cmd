@@ -12,15 +12,16 @@ rem    2. Multi-zone page: configure left/center/right/lightbar.
 rem    3. Bottom bar: Apply. The simulator renders the zones.
 rem
 rem  Notes:
-rem    - The UAC prompt is required: the service saves settings.json under
+rem    - The UAC prompt is required for the service to write its status
+rem      files under ProgramData.
+rem    - The demo stack uses an ISOLATED settings file
+rem      (%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json), so
+rem      the installed production service never sees multi-zone settings:
+rem      your real keyboard and production config stay untouched.
 rem      ProgramData (ACL) and STOPS the installed production service while
 rem      testing - it treats "MultiZone" settings as corrupt and would revert
 rem      every save. The production service is restarted automatically when
 rem      the demo service console is closed.
-rem    - The installed production service also reacts to settings.json:
-rem      your real keyboard falls back to its lighting effect while
-rem      testing. To keep it fully untouched, stop it first (admin):
-rem        sc stop ClevoLEDKeyboardControlService
 rem    - To restore the production tray afterwards, run:
 rem        "C:\Program Files\ClevoLEDKeyboardControl\ColorfulLedKeyboard.Tray.exe"
 rem ============================================================
@@ -29,6 +30,8 @@ set ROOT=%~dp0..
 set SIM=%ROOT%\ColorfulLedKeyboard.Simulator\bin\Release\net8.0-windows\ColorfulLedKeyboard.Simulator.exe
 set SVC=%ROOT%\ColorfulLedKeyboard.Service\bin\Release\net8.0-windows\ColorfulLedKeyboard.Service.exe
 set TRAY=%ROOT%\ColorfulLedKeyboard.Tray.Wpf\bin\Release\net8.0-windows10.0.22621.0\ColorfulLedKeyboard.Tray.exe
+rem Isolated settings file for the demo stack (tray + service both inherit this):
+set CLEVO_LED_SETTINGS_PATH=%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json
 
 echo [1/3] stopping leftovers (running apps lock the build outputs)...
 taskkill /f /im ColorfulLedKeyboard.Simulator.exe >nul 2>&1
