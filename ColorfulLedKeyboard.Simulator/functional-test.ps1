@@ -120,12 +120,17 @@ Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-P
 $p = Start-Sim
 $root = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
 Invoke-Button $root "StartButton"
-Start-Sleep -Seconds 2
+# 呼吸有明暗周期，单次采样可能落在低谷：连续采 4 次（间隔 600ms，约覆盖 3s 周期的 80%），任一列亮即算点亮
+$colsLit = $false
+for ($i = 0; $i -lt 4; $i++) {
+  Start-Sleep -Milliseconds 600
+  $bmp = Get-WindowBitmap $p
+  $px = Get-Pixels $bmp
+  $bmp.Dispose()
+  if (-not (IsDark $px.zone0)) { $colsLit = $true; break }
+}
 $mode = Get-TextById $root "ModeText"
 $last = Get-TextById $root "LastCommandText"
-$bmp = Get-WindowBitmap $p
-$px = Get-Pixels $bmp
-$colsLit = (-not (IsDark $px.zone0))
 $same = Near $px.zone0 $px.zone1 3 -and (Near $px.zone1 $px.zone2 3)
 Report "T2 单色呼吸运行" (($mode -like "*静态色*") -and ($last -like "*0x67 0xF2*") -and $colsLit -and $same) "模式='$mode' 命令='$last' 三列同色=$same"
 $bmp.Dispose()
@@ -163,7 +168,7 @@ Report "T5 关闭效果黑屏" $allBlack "三列全暗=$allBlack"
 $bmp.Dispose()
 Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
 
-# ============ T6 三区视图 + 灯带 ============
+# ============ T6 多分区分区化渲染（三区 + 灯带随所选灯效） ============
 $p = Start-Sim @("--view-zones", "--force-lightbar")
 $root = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
 Invoke-Button $root "StartButton"
@@ -174,7 +179,7 @@ $bmp = Get-WindowBitmap $p
 $px = Get-Pixels $bmp
 $independent = (-not (Near $px.zone0 $px.zone1 6)) -and (-not (Near $px.zone1 $px.zone2 6)) -and (-not (Near $px.zone0 $px.zone2 6))
 $lightbarLit = -not (IsDark $px.lightbar)
-Report "T6 三区独立着色+灯带" (($mode -like "*三区分区写入*") -and ($last -like "*0xF400*") -and $independent -and $lightbarLit) "三列互异=$independent 灯带点亮=$lightbarLit 模式='$mode'"
+Report "T6 多分区分区化渲染" (($mode -like "*分区化渲染*") -and ($last -like "*0xF4*") -and $independent -and $lightbarLit) "三列互异=$independent 灯带点亮=$lightbarLit 模式='$mode'"
 $bmp.Dispose()
 
 # ============ T7 通道序检验（B/R 互换） ============
@@ -229,6 +234,18 @@ $bmp = Get-WindowBitmap $p; $px = Get-Pixels $bmp
 $expectMusic = @{ R = 63; G = 0; B = 0 }
 $litIdle = (Near $px.zone0 $expectMusic 2) -and (Near $px.zone1 $expectMusic 2) -and (Near $px.zone2 $expectMusic 2)
 Report "T9 音乐模式(绑定面板+零电平底亮度)" ($panelShown -and $litIdle -and ($hint -like "*未绑定*")) "面板可见=$panelShown 实测=($($px.zone0.R),$($px.zone0.G),$($px.zone0.B)) 期望=(63,0,0) 提示='$($hint.Substring(0, [Math]::Min(24, $hint.Length)))…'"
+$bmp.Dispose()
+
+# ---- T9b 多分区音乐渲染：切三区视图，三区各偏移色相 40°、灯带补色，全部按底亮度 25%（63/255）缩放 ----
+Invoke-Button $root "ViewButton"
+Start-Sleep -Seconds 2
+$bmp = Get-WindowBitmap $p; $px = Get-Pixels $bmp
+# zone0=#FF0000×0.247=(63,0,0) zone1=hue40(255,170,0)×=(63,42,0) zone2=hue80(170,255,0)×=(42,63,0) 灯带=hue180(0,255,255)×=(0,63,63)
+$z0ok = Near $px.zone0 @{R=63; G=0; B=0} 3
+$z1ok = Near $px.zone1 @{R=63; G=42; B=0} 4
+$z2ok = Near $px.zone2 @{R=42; G=63; B=0} 4
+$lbLit2 = -not (IsDark $px.lightbar)
+Report "T9b 音乐多分区分区化渲染" ($z0ok -and $z1ok -and $z2ok -and $lbLit2) "z0=($($px.zone0.R),$($px.zone0.G),$($px.zone0.B)) z1=($($px.zone1.R),$($px.zone1.G),$($px.zone1.B)) z2=($($px.zone2.R),$($px.zone2.G),$($px.zone2.B)) 灯带亮=$lbLit2"
 $bmp.Dispose()
 Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
 

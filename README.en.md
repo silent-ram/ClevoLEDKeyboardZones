@@ -36,11 +36,13 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
   [`docs/reverse-engineering/dchu-protocol-findings.md`](docs/reverse-engineering/dchu-protocol-findings.md), section 9.
   Whether the lightbar (zone 3) is addressed is entirely up to the caller — this fork does
   **no model detection**.
-- **Virtual keyboard simulator** (dev-only, never shipped): single-zone view mirrors the
-  Worker pipeline; three-zone view drives zones/lightbar independently; B/R channel-swap
-  check; fast-forward and frame stepping. A built-in music mode can **bind any local program
-  that is playing sound** (WASAPI session peak) and replays the real music pipeline's
-  bound-player beat path — no real keyboard needed to observe the response.
+- **Virtual keyboard simulator** (dev-only, never shipped): the single-zone view mirrors the
+  Worker pipeline faithfully; the multi-zone view renders whichever effect is selected in a
+  zone-aware way — zones at +40° hue offsets, lightbar as the complement, brightness via 0xF4,
+  display model = command color x level. B/R channel-swap check, fast-forward and frame
+  stepping. A built-in music mode can **bind any local program that is playing sound** (WASAPI
+  session peak) and replays the real music pipeline's bound-player beat path — no real keyboard
+  needed to observe the response.
 - **External control**: the simulator acts as a virtual keyboard driven by this fork's service
   over a named pipe (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
   path unaffected), see

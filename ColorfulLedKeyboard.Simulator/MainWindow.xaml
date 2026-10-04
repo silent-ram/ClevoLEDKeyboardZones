@@ -70,9 +70,9 @@
                 <TextBlock Text="视图" Foreground="{StaticResource Brush.Muted}" FontSize="11.5" />
                 <Button x:Name="ViewButton" Content="当前：单分区视图（点此切三区）" Height="34" Margin="0,6,0,0"
                         Background="#2b3a5e" BorderBrush="Transparent" FontWeight="Bold" Click="OnToggleView" />
-                <TextBlock Text="三区视图下按色相偏移独立驱动左/中/右分区（0xF0/0xF1/0xF2），现有单区管线仍走 SetColor"
+                <TextBlock Text="三区视图按当前所选灯效分区化渲染：三区各偏移色相 40°、灯带取补色、亮度经 0xF4 直传；单区视图忠实复刻现有管线（三列同步、无灯带）"
                            FontSize="10.5" Foreground="{StaticResource Brush.Faint}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                <CheckBox x:Name="ForceLightbarCheck" Content="强制包含灯带 0xF3（模拟灯带机型，仅三区视图）"
+                <CheckBox x:Name="ForceLightbarCheck" Content="包含灯带 0xF3（补色，仅三区视图）"
                           Foreground="{StaticResource Brush.Muted}" Margin="0,10,0,0" />
                 <CheckBox x:Name="FastForwardCheck" Content="加速播放 ×8（快进时间驱动效果）"
                           Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" />
@@ -175,6 +175,6 @@
 
         <TextBlock Grid.Row="6" x:Name="FootnoteText" Margin="0,10,0,0" FontSize="10.5" Foreground="{StaticResource Brush.Faint}"
                    TextWrapping="Wrap"
-                   Text="内置命令流经 FakeDchuTransport 记录，零真实 EC 写入；外接模式下主项目服务经命名管道 ColorfulLedKeyboardZones.Simulator 转发命令（同时仍零 EC 写）；--probe-features 走真实驱动但仅读（GET_BIOS_FEATURES_1）。协议规格：docs/reverse-engineering/dchu-protocol-findings.md 第九节。" />
+                   Text="内置命令流经 FakeDchuTransport 记录，零真实 EC 写入；多分区视图的分区化渲染为实验预览（非生产行为），显示模型 = 命令颜色 × 亮度档；外接模式下主项目服务经命名管道 ColorfulLedKeyboardZones.Simulator 转发命令；--probe-features 走真实驱动但仅读。协议规格：docs/reverse-engineering/dchu-protocol-findings.md 第九节。" />
     </Grid>
 </Window>

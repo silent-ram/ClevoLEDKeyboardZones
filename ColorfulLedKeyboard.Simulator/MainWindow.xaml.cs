@@ -9,7 +9,9 @@ namespace ColorfulLedKeyboard.Simulator;
 /// <summary>
 /// 虚拟键盘模拟器主窗口：
 /// - 单区视图：复刻 Worker 效果管线（LightingFrameGenerator.Next → SetColor），渲染与真实键盘一致；
-/// - 三区视图：按色相偏移独立驱动左/中/右分区（0xF0/0xF1/0xF2），灯带 0xF3 可选；
+/// - 三区视图（多分区）：按当前所选灯效的帧颜色做分区化渲染——三区各偏移色相 40°、
+///   灯带取补色、亮度经 0xF4 直传（实验预览，非既有生产行为）；音乐模式同样接入；
+/// - 显示模型 = 命令颜色 × 亮度档（模拟 EC 亮度对分区颜色的作用）；
 /// - 全部命令经 FakeDchuTransport 记录并实时回推渲染，零真实 EC 写入。
 /// </summary>
 public partial class MainWindow : Window
@@ -33,6 +35,10 @@ public partial class MainWindow : Window
     private ExternalControlServer? _externalServer;
     private bool _internalRunBeforeExternal;
 
+    // 分区显示模型：最近一次命令的各区颜色 + 亮度档（渲染 = 颜色 × 亮度/255）
+    private readonly RgbColor?[] _lastZoneColors = new RgbColor?[4];
+    private byte _lastLevel = 255;
+
     // 音乐模式（绑定程序）：复刻 Worker.RunMusicAsync 的"已绑定播放器"路径——
     // 电平 = 绑定进程的会话峰值，节拍包络/换色由 Core 的 MusicPulseController 驱动
     private readonly AudioProgramProbe _audioProbe = new();
@@ -50,9 +56,9 @@ public partial class MainWindow : Window
         RebuildDevice();
         UpdateViewButton();
         ForceLightbarCheck.IsEnabled = _threeZoneView;
-        if (forceLightbar && _threeZoneView)
+        if (_threeZoneView)
         {
-            ForceLightbarCheck.IsChecked = true;
+            ForceLightbarCheck.IsChecked = true; // 多分区默认点亮灯带（--force-lightbar 兼容保留）
         }
 
         // 外接控制（默认开启）：XAML 里不挂事件避免初始化期触发，这里统一接线
@@ -147,33 +153,108 @@ public partial class MainWindow : Window
         };
         _transport.CommandSent += OnCommandSent;
         _device = new DchuKeyboardDevice(_transport);
-        SetStatus($"已重建虚拟设备（{(_threeZoneView ? "三区能力位" : "无三区能力位")}）");
+        ResetZoneDisplayModel();
+        SetStatus($"已重建虚拟设备（{(_threeZoneView ? "三区能力位，分区化渲染" : "无三区能力位，单区管线")}）");
     }
 
     private void Tick()
     {
+        _elapsedMs += _generator.IntervalMs * (FastForwardCheck.IsChecked == true ? 8 : 1);
+        if (_threeZoneView)
+        {
+            TickZones();
+            return;
+        }
+
         if (IsMusicMode)
         {
             TickMusic();
             return;
         }
 
-        _elapsedMs += _generator.IntervalMs * (FastForwardCheck.IsChecked == true ? 8 : 1);
-        if (_threeZoneView)
-        {
-            TickThreeZone();
-        }
-        else
-        {
-            // 复刻 Worker 管线：LightingFrameGenerator.Next → SetColor
-            var color = _generator.NextAtElapsed(ClampBrightness(), _elapsedMs);
-            _device.SetColor(color);
-        }
+        // 复刻 Worker 管线：LightingFrameGenerator.Next → SetColor
+        var color = _generator.NextAtElapsed(ClampBrightness(), _elapsedMs);
+        _device.SetColor(color);
     }
 
     private bool IsMusicMode => string.Equals(EffectBox.SelectedItem as string, MusicEffectName, StringComparison.Ordinal);
 
-    private void TickMusic()
+    /// <summary>
+    /// 多分区视图：按当前所选灯效的帧颜色做分区化渲染——
+    /// 三区各偏移色相 40°、灯带取补色（可选）、亮度经 0xF4 直传（不经软件缩放，
+    /// 更接近真实分区管线的做法）。效果选择决定基色与明暗，音乐模式由节拍包络驱动。
+    /// </summary>
+    private void TickZones()
+    {
+        RgbColor frameColor;
+        int brightnessPercent;
+        if (IsMusicMode)
+        {
+            (frameColor, brightnessPercent) = NextMusicFrame();
+        }
+        else
+        {
+            frameColor = _generator.NextAtElapsed(100, _elapsedMs);
+            brightnessPercent = ClampBrightness();
+        }
+
+        RenderZonesFromFrame(frameColor, brightnessPercent);
+    }
+
+    private void RenderZonesFromFrame(RgbColor frameColor, int brightnessPercent)
+    {
+        var (hue, sat, val) = ToHsv(frameColor);
+        var zones = new List<(int zone, RgbColor color)>();
+        for (var zone = 0; zone < 3; zone++)
+        {
+            zones.Add((zone, MaybeSwapBr(RgbColor.FromHsv((hue + zone * 40) % 360, sat, val))));
+        }
+
+        if (ForceLightbarCheck.IsChecked == true)
+        {
+            zones.Add((3, MaybeSwapBr(RgbColor.FromHsv((hue + 180) % 360, sat, val))));
+        }
+
+        var level = (byte)Math.Clamp(brightnessPercent * 255 / 100, 0, 255);
+        _device.ApplyZoneStatic(zones, level);
+    }
+
+    private static (double Hue, double Sat, double Val) ToHsv(RgbColor color)
+    {
+        var r = color.R / 255d;
+        var g = color.G / 255d;
+        var b = color.B / 255d;
+        var max = Math.Max(r, Math.Max(g, b));
+        var min = Math.Min(r, Math.Min(g, b));
+        var delta = max - min;
+        double hue;
+        if (delta == 0)
+        {
+            hue = 0;
+        }
+        else if (max == r)
+        {
+            hue = 60 * (((g - b) / delta) % 6);
+        }
+        else if (max == g)
+        {
+            hue = 60 * ((b - r) / delta + 2);
+        }
+        else
+        {
+            hue = 60 * ((r - g) / delta + 4);
+        }
+
+        if (hue < 0)
+        {
+            hue += 360;
+        }
+
+        return (hue, max == 0 ? 0 : delta / max, max);
+    }
+
+    /// <summary>推进一帧音乐模式，返回（源颜色 0..255 未缩放, 亮度百分比）。</summary>
+    private (RgbColor Color, int Brightness) NextMusicFrame()
     {
         var level = 0d;
         if (_boundPid != 0)
@@ -204,9 +285,14 @@ public partial class MainWindow : Window
         var brightness = (int)Math.Clamp(
             Math.Round(baseBrightness + (peakBrightness - baseBrightness) * Math.Pow(frame.Envelope, 0.55)),
             baseBrightness, peakBrightness);
-        _device.SetColor(sourceColor.Scale(brightness));
-
         MusicLevelBar.Width = Math.Clamp(level, 0, 1) * 220;
+        return (sourceColor, brightness);
+    }
+
+    private void TickMusic()
+    {
+        var (color, brightness) = NextMusicFrame();
+        _device.SetColor(color.Scale(brightness));
     }
 
     private void RefreshPrograms()
@@ -277,26 +363,6 @@ public partial class MainWindow : Window
         ProgramHintText.Text = $"已绑定 {entry.ProcessName} (pid {entry.ProcessId})——键盘随其峰值电平起伏；进程退出后绑定自动失效。";
     }
 
-    private void TickThreeZone()
-    {
-        // 三区演示：基色相随时间推进，左/中/右各偏移 40°，灯带取补色 —— 独立着色肉眼立辨
-        var baseHue = (_elapsedMs / 25.0) % 360;
-        var zones = new List<(int zone, RgbColor color)>();
-        for (var zone = 0; zone < 3; zone++)
-        {
-            var zoneColor = RgbColor.FromHsv((baseHue + zone * 40) % 360, 1, 1);
-            zones.Add((zone, MaybeSwapBr(zoneColor)));
-        }
-
-        if (ForceLightbarCheck.IsChecked == true)
-        {
-            var lightbar = RgbColor.FromHsv((baseHue + 180) % 360, 1, 1);
-            zones.Add((3, MaybeSwapBr(lightbar)));
-        }
-
-        _device.ApplyZoneStatic(zones, 255);
-    }
-
     private RgbColor MaybeSwapBr(RgbColor color) =>
         SwapBrCheck.IsChecked == true
             ? new RgbColor(color.B, color.G, color.R) // 互换 B/R 字节：红↔蓝肉眼立辨
@@ -339,15 +405,20 @@ public partial class MainWindow : Window
         switch (local7)
         {
             case 0xF when local4 <= 2: // 分区/槽位颜色（单区三槽位与三区分区同编码）
-                SetZoneColumn(local4, Color.FromRgb((byte)((args >> 8) & 0xFF), (byte)(args & 0xFF), (byte)((args >> 16) & 0xFF)));
-                ModeText.Text = _threeZoneView ? "静态色（三区分区写入）" : "静态色（单区三槽位写）";
+                _lastZoneColors[local4] = new RgbColor(
+                    (byte)((args >> 8) & 0xFF), (byte)(args & 0xFF), (byte)((args >> 16) & 0xFF));
+                RepaintZone(local4);
+                ModeText.Text = _threeZoneView ? "分区化渲染（CUSTOM 静态 + 0xF4）" : "静态色（单区三槽位写）";
                 break;
             case 0xF when local4 == 3: // 灯带
-                LightbarBorder.Background = new SolidColorBrush(Color.FromRgb(
-                    (byte)((args >> 8) & 0xFF), (byte)(args & 0xFF), (byte)((args >> 16) & 0xFF)));
+                _lastZoneColors[3] = new RgbColor(
+                    (byte)((args >> 8) & 0xFF), (byte)(args & 0xFF), (byte)((args >> 16) & 0xFF));
+                RepaintZone(3);
                 LightbarHintText.Text = "灯带：已点亮（0xF3）";
                 break;
             case 0xF when local4 == 4: // 亮度（原始字节直传）
+                _lastLevel = (byte)(args & 0xFF);
+                RepaintAllZones();
                 UpdateBrightnessBar(args & 0xFF, $"亮度 {args & 0xFF}/255（0x{args & 0xFF:X2}）");
                 break;
             case 0x0: // 9-bit 紧致静态色（单区协议）
@@ -396,8 +467,38 @@ public partial class MainWindow : Window
         {
             0 => Zone0Border,
             1 => Zone1Border,
-            _ => Zone2Border,
+            2 => Zone2Border,
+            _ => LightbarBorder,
         }).Background = brush;
+    }
+
+    // 显示模型：EC 实际呈现 = 命令颜色 × 亮度档/255（呼吸/脉冲的明暗由此在多分区视图可见）
+    private void RepaintZone(int zone)
+    {
+        if (_lastZoneColors[zone] is not { } color)
+        {
+            return;
+        }
+
+        var scaled = Color.FromRgb(
+            (byte)(color.R * _lastLevel / 255),
+            (byte)(color.G * _lastLevel / 255),
+            (byte)(color.B * _lastLevel / 255));
+        SetZoneColumn(zone, scaled);
+    }
+
+    private void RepaintAllZones()
+    {
+        for (var zone = 0; zone < 4; zone++)
+        {
+            RepaintZone(zone);
+        }
+    }
+
+    private void ResetZoneDisplayModel()
+    {
+        Array.Clear(_lastZoneColors);
+        _lastLevel = 255;
     }
 
     private void SetAllZoneColumns(Brush brush)
@@ -423,7 +524,11 @@ public partial class MainWindow : Window
         RebuildDevice();
         UpdateViewButton();
         ForceLightbarCheck.IsEnabled = _threeZoneView;
-        if (!_threeZoneView)
+        if (_threeZoneView)
+        {
+            ForceLightbarCheck.IsChecked = true; // 多分区默认点亮灯带（补色），可手动关闭
+        }
+        else
         {
             LightbarBorder.Background = (Brush)FindResource("Brush.Field");
             LightbarHintText.Text = "灯带（仅收到 0xF3 时点亮）";
