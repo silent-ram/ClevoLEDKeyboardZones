@@ -1,6 +1,7 @@
 namespace ColorfulLedKeyboard.Service;
 
 using ColorfulLedKeyboard.Core;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 public class Worker : BackgroundService
@@ -147,6 +148,94 @@ public class Worker : BackgroundService
     }
 
     private async Task RunEffectAsync(KeyboardSettings settings, CancellationToken stoppingToken)
+    {
+        if (settings.OperatingMode == OperatingMode.MultiZone)
+        {
+            await RunMultiZoneAsync(settings, stoppingToken);
+            return;
+        }
+
+        await RunLightingAsync(settings, stoppingToken);
+    }
+
+    /// <summary>
+    /// 多分区模式（实验）：左/中/右[/灯带]各自按 MultiZone.Zones 的灯效独立渲染。
+    /// 门控：能力位（GET_BIOS_FEATURES_1 0x00400000）未命中 → 写状态文件并回退普通灯效管线，
+    /// 绝不静默下发分区命令（单分区用户零变化的保证）。命中即按区下发 0xF0/0xF1/0xF2[/0xF3]，
+    /// 颜色软件缩放（与单区管线一致），每区变化才写，时基为进程内 Stopwatch 共享时间轴。
+    /// 注意：能力位只是必要条件（P955ET1 实测置位但物理单分区，文档 9.9）——命中门控的
+    /// 单分区硬件上三槽位退化同址，表现为各区颜色互相覆盖，UI 已提示。
+    /// </summary>
+    private async Task RunMultiZoneAsync(KeyboardSettings settings, CancellationToken stoppingToken)
+    {
+        var multi = settings.MultiZone;
+        if (!_device.Has3ZoneKeyboard)
+        {
+            new MultiZoneStatus { CapabilityDetected = false, Active = false }.Save();
+            _logger.LogWarning(
+                "Multi-zone mode selected but the 3-zone capability bit is clear; falling back to the single-zone pipeline");
+            var fallback = settings.CloneForRuntime();
+            fallback.OperatingMode = OperatingMode.Lighting;
+            await RunLightingAsync(fallback, stoppingToken);
+            return;
+        }
+
+        new MultiZoneStatus { CapabilityDetected = true, Active = true }.Save();
+        try
+        {
+            var zoneEffects = multi.Zones.Take(3).ToList();
+            var generators = zoneEffects.Select(effect => new LightingFrameGenerator(effect)).ToList();
+            var lightbarGenerator = multi.IncludeLightbar ? new LightingFrameGenerator(multi.Zones[3]) : null;
+            var interval = Math.Clamp(
+                Math.Min(generators.Min(generator => generator.IntervalMs),
+                    lightbarGenerator?.IntervalMs ?? int.MaxValue),
+                20, 100);
+            var clock = Stopwatch.StartNew();
+            RgbColor? last0 = null;
+            RgbColor? last1 = null;
+            RgbColor? last2 = null;
+            RgbColor? last3 = null;
+
+            while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
+            {
+                var elapsed = clock.Elapsed.TotalMilliseconds;
+                var frame = new List<(int Zone, RgbColor Color)>(4);
+                var z0 = generators[0].NextAtElapsed(settings.Brightness, elapsed);
+                if (z0 != last0) { frame.Add((0, z0)); last0 = z0; }
+                var z1 = generators[1].NextAtElapsed(settings.Brightness, elapsed);
+                if (z1 != last1) { frame.Add((1, z1)); last1 = z1; }
+                var z2 = generators[2].NextAtElapsed(settings.Brightness, elapsed);
+                if (z2 != last2) { frame.Add((2, z2)); last2 = z2; }
+                if (lightbarGenerator is not null)
+                {
+                    var z3 = lightbarGenerator.NextAtElapsed(settings.Brightness, elapsed);
+                    if (z3 != last3) { frame.Add((3, z3)); last3 = z3; }
+                }
+
+                if (frame.Count > 0)
+                {
+                    RenderMultiZoneFrame(_device, frame);
+                }
+
+                await Task.Delay(interval, stoppingToken);
+            }
+        }
+        finally
+        {
+            new MultiZoneStatus { CapabilityDetected = true, Active = false }.Save();
+        }
+    }
+
+    /// <summary>按 (zone, color) 顺序下发分区颜色（经 SetZoneColor 的能力门控；调用方须已确认能力位）。</summary>
+    internal static void RenderMultiZoneFrame(DchuKeyboardDevice device, IReadOnlyList<(int Zone, RgbColor Color)> zones)
+    {
+        foreach (var entry in zones)
+        {
+            device.SetZoneColor(entry.Zone, entry.Color);
+        }
+    }
+
+    private async Task RunLightingAsync(KeyboardSettings settings, CancellationToken stoppingToken)
     {
         if (settings.OperatingMode == OperatingMode.Music)
         {

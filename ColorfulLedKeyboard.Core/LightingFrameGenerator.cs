@@ -2,19 +2,28 @@ namespace ColorfulLedKeyboard.Core;
 
 public sealed class LightingFrameGenerator
 {
-    private readonly KeyboardSettings _settings;
+    private readonly LightingEffectSettings _effect;
+    private readonly int _defaultBrightness;
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
 
+    /// <summary>键盘级构造：灯效取 settings.Effect，无参 Next() 的默认亮度取 settings.Brightness。</summary>
     public LightingFrameGenerator(KeyboardSettings settings)
+        : this(settings.Effect, settings.Brightness)
     {
-        _settings = settings.Normalize();
     }
 
-    public int IntervalMs => Math.Clamp(_settings.Effect.IntervalMs, 20, 500);
+    /// <summary>单灯效构造：多分区模式按区构造（每区一个独立生成器，共享同一时间轴）。</summary>
+    public LightingFrameGenerator(LightingEffectSettings effect, int defaultBrightness = 70)
+    {
+        _effect = (effect ?? new LightingEffectSettings()).Normalize();
+        _defaultBrightness = Math.Clamp(defaultBrightness, 0, 100);
+    }
+
+    public int IntervalMs => Math.Clamp(_effect.IntervalMs, 20, 500);
 
     public RgbColor Next()
     {
-        return Next(_settings.Brightness);
+        return Next(_defaultBrightness);
     }
 
     public RgbColor Next(int brightness)
@@ -25,11 +34,11 @@ public sealed class LightingFrameGenerator
 
     public RgbColor NextAtElapsed(int brightness, double elapsedMs)
     {
-        var color = _settings.Effect.Type switch
+        var color = _effect.Type switch
         {
             EffectType.Off => RgbColor.Black,
-            EffectType.Static => RgbColor.FromHex(_settings.Effect.Color),
-            EffectType.Breathing => Breathing(RgbColor.FromHex(_settings.Effect.Color), elapsedMs),
+            EffectType.Static => RgbColor.FromHex(_effect.Color),
+            EffectType.Breathing => Breathing(RgbColor.FromHex(_effect.Color), elapsedMs),
             EffectType.Sequence => Sequence(elapsedMs),
             EffectType.Rainbow => Rainbow(elapsedMs),
             EffectType.Pulse => PatternColor(elapsedMs, PulseFactor),
@@ -42,12 +51,12 @@ public sealed class LightingFrameGenerator
 
     private RgbColor Rainbow(double elapsedMs)
     {
-        if (_settings.Effect.CustomSequenceColorsEnabled && _settings.Effect.Sequence.Count > 0)
+        if (_effect.CustomSequenceColorsEnabled && _effect.Sequence.Count > 0)
         {
             return Sequence(elapsedMs, allowBreathing: false);
         }
 
-        var degreesPerSecond = Math.Clamp(_settings.Effect.Step, 1, 20) * 9;
+        var degreesPerSecond = Math.Clamp(_effect.Step, 1, 20) * 9;
         var absoluteSeconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d;
         var hue = absoluteSeconds * degreesPerSecond;
         return RgbColor.FromHsv(hue, 1, 1);
@@ -55,15 +64,15 @@ public sealed class LightingFrameGenerator
 
     private RgbColor Breathing(RgbColor color, double elapsedMs)
     {
-        if (_settings.Effect.HardBlink)
+        if (_effect.HardBlink)
         {
-            var on = elapsedMs % _settings.Effect.PeriodMs < _settings.Effect.PeriodMs / 2d;
+            var on = elapsedMs % _effect.PeriodMs < _effect.PeriodMs / 2d;
             return on ? color : RgbColor.Black;
         }
 
-        var phase = elapsedMs % _settings.Effect.PeriodMs / _settings.Effect.PeriodMs;
+        var phase = elapsedMs % _effect.PeriodMs / _effect.PeriodMs;
         var wave = (1 - Math.Cos(phase * Math.PI * 2)) / 2d;
-        var min = _settings.Effect.MinimumBrightness / 100d;
+        var min = _effect.MinimumBrightness / 100d;
         var factor = min + (1 - min) * wave;
         return color.Scale((int)Math.Round(factor * 100));
     }
@@ -72,7 +81,7 @@ public sealed class LightingFrameGenerator
 
     private RgbColor Sequence(double elapsedMs, bool allowBreathing)
     {
-        var sequence = _settings.Effect.Sequence;
+        var sequence = _effect.Sequence;
         if (sequence.Count == 0)
         {
             return RgbColor.Black;
@@ -126,13 +135,13 @@ public sealed class LightingFrameGenerator
 
     private RgbColor PatternColor(double elapsedMs, Func<double, double> factorAtPhase)
     {
-        var sequence = _settings.Effect.Sequence;
+        var sequence = _effect.Sequence;
         if (sequence.Count == 0)
         {
             return RgbColor.Black;
         }
 
-        var periodMs = Math.Max(1, _settings.Effect.PeriodMs);
+        var periodMs = Math.Max(1, _effect.PeriodMs);
         var patternIndex = (long)Math.Floor(Math.Max(0, elapsedMs) / periodMs);
         var color = RgbColor.FromHex(sequence[(int)(patternIndex % sequence.Count)].Color);
         var phase = Math.Max(0, elapsedMs) % periodMs / periodMs;

@@ -13,6 +13,7 @@ public static class AppPaths
     public const string DriverComponentStateFileName = "driver-component.json";
     public const string AudioSourceStatusFileName = "audio-source-status.json";
     public const string AutomationStatusFileName = "automation-status.json";
+    public const string MultiZoneStatusFileName = "multizone-status.json";
     public const string MediaPlaybackStateFileName = "media-playback.json";
     public const string AudioApplicationsStateFileName = "audio-applications.json";
     public const string SettingsRecoveryStateFileName = "settings-recovery.json";
@@ -40,6 +41,8 @@ public static class AppPaths
     public static string AudioSourceStatusPath => Path.Combine(ProgramDataDirectory, AudioSourceStatusFileName);
 
     public static string AutomationStatusPath => Path.Combine(ProgramDataDirectory, AutomationStatusFileName);
+
+    public static string MultiZoneStatusPath => Path.Combine(ProgramDataDirectory, MultiZoneStatusFileName);
 
     public static string MediaPlaybackStatePath => Path.Combine(ProgramDataDirectory, MediaPlaybackStateFileName);
 

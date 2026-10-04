@@ -30,6 +30,8 @@ public sealed class KeyboardSettings
 
     public AutomationSettings Automation { get; set; } = new();
 
+    public MultiZoneSettings MultiZone { get; set; } = new();
+
     [System.Text.Json.Serialization.JsonIgnore]
     public int OutputBrightnessLimit { get; set; } = 100;
 
@@ -133,6 +135,8 @@ public sealed class KeyboardSettings
         AppProfiles.Normalize();
         Automation ??= new AutomationSettings();
         Automation.Normalize();
+        MultiZone ??= new MultiZoneSettings();
+        MultiZone.Normalize();
         OutputBrightnessLimit = Math.Clamp(OutputBrightnessLimit, 0, 100);
         TypingPulse ??= new TypingPulseSettings();
         TypingPulse.Normalize();
@@ -281,6 +285,11 @@ public sealed class KeyboardSettings
                     TimeFilter = CloneTimeFilter(rule.TimeFilter),
                     Action = CloneSceneAction(rule.Action)
                 }).ToList()
+            },
+            MultiZone = new MultiZoneSettings
+            {
+                IncludeLightbar = MultiZone.IncludeLightbar,
+                Zones = MultiZone.Zones.Select(CloneEffect).ToList()
             },
             OutputBrightnessLimit = OutputBrightnessLimit,
             SelectedAudioProcessName = SelectedAudioProcessName,

@@ -11,5 +11,13 @@ public enum OperatingMode
     Lighting = 0,
 
     /// <summary>音乐模式：键盘根据系统音频电平动态变化，参数由 EffectSettings.Music 配置。</summary>
-    Music = 1
+    Music = 1,
+
+    /// <summary>
+    /// 多分区模式（实验）：左/中/右/灯带各自按 MultiZone.Zones 的灯效配置独立渲染，
+    /// 经能力位门控（未命中回退灯效管线）；灯带不做机型检测，由 IncludeLightbar 手动开关。
+    /// 注意：主仓库（单区版）没有此枚举值——旧服务读到会按未知值回退灯效模式，灯效参数
+    /// 保持不变，因此与主仓库共享 settings.json 是安全的。
+    /// </summary>
+    MultiZone = 2
 }

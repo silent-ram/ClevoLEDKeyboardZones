@@ -47,6 +47,15 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
   over a named pipe (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
   path unaffected), see
   [`docs/simulator/external-control.md`](docs/simulator/external-control.md).
+- **Multi-zone mode in the app (experimental)**: pick "Multi-zone" on the lighting page, then
+  configure per-zone effect (static / breathing / rainbow / off) and color for left/center/right
+  and the lightbar on the multi-zone page. The service gates on the 3-zone capability bit and
+  falls back to the normal pipeline when it is clear (the page shows the status). Known limits:
+  the capability bit is only a necessary condition — some single-zone models set it too (e.g.
+  P955ET1), where the three slot writes collapse onto one register; the lightbar is excluded
+  from capability gating and controlled by an explicit opt-in switch (0xF3 on lightbar-less
+  hardware is undefined). Sharing settings.json with the main repository stays safe: the old
+  service treats the unknown mode value as regular lighting and keeps its effect settings.
 
 ## Download & Install
 

@@ -96,6 +96,9 @@ public sealed class ServiceIpcServer : IDisposable
             case "GetAutomationStatus":
                 await ReplyAsync(pipe, true, "", ReadJson<AutomationStatus>(AppPaths.AutomationStatusPath), cancellationToken);
                 break;
+            case "GetMultiZoneStatus":
+                await ReplyAsync(pipe, true, "", ReadJson<MultiZoneStatus>(AppPaths.MultiZoneStatusPath), cancellationToken);
+                break;
             case "GetAudioApplications":
                 await ReplyAsync(pipe, true, "", ReadJson<AudioApplicationsState>(AppPaths.AudioApplicationsStatePath), cancellationToken);
                 break;

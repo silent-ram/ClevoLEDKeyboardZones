@@ -21,6 +21,7 @@ public sealed class EffectPage : UserControl
 
     private readonly System.Windows.Controls.RadioButton _modeLighting = MakeRadio("灯效模式");
     private readonly System.Windows.Controls.RadioButton _modeMusic = MakeRadio("音乐模式");
+    private readonly System.Windows.Controls.RadioButton _modeMultiZone = MakeRadio("多分区");
     private readonly System.Windows.Controls.RadioButton _modeOff = MakeRadio("关闭");
     private readonly System.Windows.Controls.ComboBox _effectType = MakeCombo(EffectLabels);
     private readonly UiSliderRow _brightness = new("亮度", 0, 100, "%");
@@ -77,6 +78,7 @@ public sealed class EffectPage : UserControl
 
         _modeLighting.Checked += (_, _) => OnModeChanged();
         _modeMusic.Checked += (_, _) => OnModeChanged();
+        _modeMultiZone.Checked += (_, _) => OnModeChanged();
         _modeOff.Checked += (_, _) => OnModeChanged();
         _effectType.SelectionChanged += (_, _) => OnEffectTypeChanged();
         _brightness.ValueChanged += (_, _) => MarkDirty();
@@ -119,6 +121,8 @@ public sealed class EffectPage : UserControl
         modeRow.Children.Add(_modeLighting);
         _modeMusic.Margin = new Thickness(20, 0, 0, 0);
         modeRow.Children.Add(_modeMusic);
+        _modeMultiZone.Margin = new Thickness(20, 0, 0, 0);
+        modeRow.Children.Add(_modeMultiZone);
         _modeOff.Margin = new Thickness(20, 0, 0, 0);
         modeRow.Children.Add(_modeOff);
 
@@ -215,8 +219,10 @@ public sealed class EffectPage : UserControl
         _loadingSettings = true;
         try
         {
-            _modeLighting.IsChecked = settings.Enabled && settings.OperatingMode != OperatingMode.Music;
+            _modeLighting.IsChecked = settings.Enabled &&
+                settings.OperatingMode is not (OperatingMode.Music or OperatingMode.MultiZone);
             _modeMusic.IsChecked = settings.Enabled && settings.OperatingMode == OperatingMode.Music;
+            _modeMultiZone.IsChecked = settings.Enabled && settings.OperatingMode == OperatingMode.MultiZone;
             _modeOff.IsChecked = !settings.Enabled;
             _effectType.SelectedIndex = EffectTypeToIndex(settings.Effect.Type);
             _brightness.Value = settings.Brightness;
@@ -249,7 +255,9 @@ public sealed class EffectPage : UserControl
         settings.Enabled = _modeOff.IsChecked != true;
         if (_modeOff.IsChecked != true)
         {
-            settings.OperatingMode = _modeMusic.IsChecked == true ? OperatingMode.Music : OperatingMode.Lighting;
+            settings.OperatingMode = _modeMultiZone.IsChecked == true ? OperatingMode.MultiZone
+                : _modeMusic.IsChecked == true ? OperatingMode.Music
+                : OperatingMode.Lighting;
         }
         if (_effectChangedByUser)
         {
@@ -303,6 +311,10 @@ public sealed class EffectPage : UserControl
         {
             PageRequested?.Invoke(this, 2);
         }
+        else if (_modeMultiZone.IsChecked == true)
+        {
+            PageRequested?.Invoke(this, 3);
+        }
         else if (_modeLighting.IsChecked == true)
         {
             // 切回灯效模式：从 LastUsedLightingEffect 恢复
@@ -318,7 +330,8 @@ public sealed class EffectPage : UserControl
     {
         var music = _modeMusic.IsChecked == true;
         var off = _modeOff.IsChecked == true;
-        var lightingEditable = !music && !off;
+        var multizone = _modeMultiZone.IsChecked == true;
+        var lightingEditable = !music && !off && !multizone;
         _effectType.IsEnabled = lightingEditable;
         UpdateBrightnessAvailability();
         _effectColor.IsEnabled = lightingEditable;
@@ -353,7 +366,8 @@ public sealed class EffectPage : UserControl
     {
         var off = _modeOff.IsChecked == true;
         var music = _modeMusic.IsChecked == true;
-        var hideEffectParams = off || music;
+        var multizone = _modeMultiZone.IsChecked == true;
+        var hideEffectParams = off || music || multizone;
         var effect = SelectedEffectType(EffectType.Rainbow);
         var singleColor = !hideEffectParams && effect is EffectType.Static or EffectType.Breathing;
         var sequenceVisible = !hideEffectParams && effect is EffectType.Rainbow or EffectType.Sequence or EffectType.Pulse or EffectType.Heartbeat;
@@ -398,6 +412,11 @@ public sealed class EffectPage : UserControl
         else if (music)
         {
             _modeHint.Text = "音乐模式由音乐页配置，灯效参数已禁用。";
+            _modeHintHost.Visibility = Visibility.Visible;
+        }
+        else if (multizone)
+        {
+            _modeHint.Text = "多分区模式由多分区页配置；这里的亮度滑块仍然生效。";
             _modeHintHost.Visibility = Visibility.Visible;
         }
         else

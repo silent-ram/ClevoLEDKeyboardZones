@@ -19,6 +19,7 @@ public partial class MainWindow : Window
         ("当前状态", "\uE80F"),   // Home
         ("灯效设置", "\uE791"),   // Lightbulb
         ("音乐模式", "\uEC4F"),   // MusicNote
+        ("多分区", "\uE790"),     // Color
         ("场景自动化", "\uE9D9"), // Flow
         ("事件反馈", "\uE945"),   // LightningBolt
         ("诊断与恢复", "\uE90F"), // Repair
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
     private const string BaseTitle = "ClevoLEDKeyboardControl 设置";
     private EffectPage? _effectPage;
     private MusicPage? _musicPage;
+    private MultiZonePage? _multiZonePage;
     private AutomationPage? _automationPage;
     private EventFeedbackPage? _eventFeedbackPage;
     private DiagnosticsPage? _diagnosticsPage;
@@ -127,6 +129,7 @@ public partial class MainWindow : Window
     {
         _effectPage?.LoadFromStore(new SettingsStore().Load());
         _musicPage?.LoadFromStore(new SettingsStore().Load());
+        _multiZonePage?.LoadFromStore(new SettingsStore().Load());
         _automationPage?.LoadFromStore(new SettingsStore().Load());
         _eventFeedbackPage?.LoadFromStore(new SettingsStore().Load());
         _diagnosticsPage?.CollectAll();
@@ -185,6 +188,12 @@ public partial class MainWindow : Window
         _pages.Add(musicPage);
         musicPage.LoadFromStore(new SettingsStore().Load());
         musicPage.SetAdvancedExpanded(_initialUiState.MusicAdvancedExpanded);
+
+        var multiZonePage = new Pages.MultiZonePage();
+        multiZonePage.Changed += (_, _) => UpdateSaveBar();
+        _multiZonePage = multiZonePage;
+        _pages.Add(multiZonePage);
+        multiZonePage.LoadFromStore(new SettingsStore().Load());
 
         var automationPage = new AutomationPage();
         automationPage.Changed += (_, _) => UpdateSaveBar();
@@ -246,12 +255,14 @@ public partial class MainWindow : Window
             var settings = _settingsStore.Load();
             _effectPage?.ApplyTo(settings);
             _musicPage?.ApplyTo(settings);
+            _multiZonePage?.ApplyTo(settings);
             _automationPage?.ApplyTo(settings);
             _eventFeedbackPage?.ApplyTo(settings);
             _softwareSettingsPage?.ApplyTo(settings);
             _settingsStore.Save(settings);
             _effectPage?.OnSaved(settings);
             _musicPage?.OnSaved(settings);
+            _multiZonePage?.ResetDirty();
             _automationPage.ResetDirty();
             _eventFeedbackPage.ResetDirty();
             _softwareSettingsPage?.ResetDirty();
@@ -279,6 +290,7 @@ public partial class MainWindow : Window
         _musicPage?.SetAdvancedExpanded(_initialUiState.MusicAdvancedExpanded);
         _effectPage?.LoadFromStore(new SettingsStore().Load());
         _musicPage?.LoadFromStore(new SettingsStore().Load());
+        _multiZonePage?.LoadFromStore(new SettingsStore().Load());
         _automationPage?.LoadFromStore(new SettingsStore().Load());
         _eventFeedbackPage?.LoadFromStore(new SettingsStore().Load());
         _softwareSettingsPage?.LoadFromStore(new SettingsStore().Load());
@@ -287,6 +299,7 @@ public partial class MainWindow : Window
     }
 
     private bool HasAnyDirty => _effectPage is { IsDirty: true } || _musicPage is { IsDirty: true } ||
+        _multiZonePage is { IsDirty: true } ||
         _automationPage is { IsDirty: true } || _eventFeedbackPage is { IsDirty: true } ||
         _softwareSettingsPage is { IsDirty: true };
 
@@ -308,6 +321,7 @@ public partial class MainWindow : Window
     {
         var automationStatus = AutomationStatus.Load();
         _musicPage?.RefreshRuntimeStatus(automationStatus);
+        _multiZonePage?.RefreshStatus();
         _automationPage?.UpdateStatusText(automationStatus);
         var serviceStatus = GetServiceStatusText();
         var driverStatus = GetDriverStatusText();
@@ -334,7 +348,8 @@ public partial class MainWindow : Window
             ? "灯光已关闭"
             : fresh && (!string.IsNullOrWhiteSpace(status!.ActiveMusicApplication) || status.TargetDescription.StartsWith("音乐：", StringComparison.Ordinal))
                 ? "音乐模式"
-                : settings.OperatingMode == OperatingMode.Music ? "音乐模式" : "灯效模式";
+                : settings.OperatingMode == OperatingMode.MultiZone ? "多分区模式（实验）"
+            : settings.OperatingMode == OperatingMode.Music ? "音乐模式" : "灯效模式";
         var brightness = fresh && !string.IsNullOrWhiteSpace(status!.BrightnessDisplay)
             ? status.BrightnessDisplay
             : settings.OperatingMode == OperatingMode.Music
@@ -509,6 +524,7 @@ public partial class MainWindow : Window
         _pages.Clear();
         _effectPage = null;
         _musicPage = null;
+        _multiZonePage = null;
         _automationPage = null;
         _eventFeedbackPage = null;
         _diagnosticsPage = null;

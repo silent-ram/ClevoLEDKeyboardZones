@@ -11,7 +11,7 @@ public partial class OverviewPage : UserControl
         InitializeComponent();
         OpenLighting.Click += (_, _) => RequestPage(1);
         OpenMusic.Click += (_, _) => RequestPage(2);
-        OpenAutomation.Click += (_, _) => RequestPage(3);
+        OpenAutomation.Click += (_, _) => RequestPage(4);
     }
 
     /// <summary>WinForms 版同款交互：快捷按钮跳转导航页，经宿主窗口处理。</summary>
