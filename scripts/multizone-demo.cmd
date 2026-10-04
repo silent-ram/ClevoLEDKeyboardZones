@@ -12,9 +12,11 @@ rem    2. Multi-zone page: configure left/center/right/lightbar.
 rem    3. Bottom bar: Apply. The simulator renders the zones.
 rem
 rem  Notes:
-rem    - The UAC prompt is required: the service saves settings.json
-rem      under ProgramData, which needs elevation when run as a console
-rem      app (the installed production service runs as LocalSystem).
+rem    - The UAC prompt is required: the service saves settings.json under
+rem      ProgramData (ACL) and STOPS the installed production service while
+rem      testing - it treats "MultiZone" settings as corrupt and would revert
+rem      every save. The production service is restarted automatically when
+rem      the demo service console is closed.
 rem    - The installed production service also reacts to settings.json:
 rem      your real keyboard falls back to its lighting effect while
 rem      testing. To keep it fully untouched, stop it first (admin):
@@ -51,7 +53,8 @@ start "" "%TRAY%" --settings
 echo.
 echo Started: simulator + service (elevated, simulator pipe mode) + tray.
 echo Check the service console says: IPC hosted on ClevoLEDKeyboardControlZones.v2
-echo To stop: close the service console window, then quit the tray and simulator.
+echo To stop: close the service console window (production service auto-restarts),
+echo then quit the tray and simulator.
 pause
 exit /b 0
 
