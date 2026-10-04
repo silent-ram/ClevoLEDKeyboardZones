@@ -656,7 +656,7 @@ public partial class MainWindow : Window
         else
         {
             ResumeInternalDemo();
-            ExternalStatusText.Text = $"外接：等待服务连接（管道 {ExternalControlServer.PipeName}；累计命令 {total} 条）";
+            ExternalStatusText.Text = $"外接：等待服务连接（{SimulatorPipeTransport.ChannelDescription}；累计命令 {total} 条）";
         }
     }
 

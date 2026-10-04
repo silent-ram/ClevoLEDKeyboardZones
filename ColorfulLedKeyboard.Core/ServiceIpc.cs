@@ -1,4 +1,6 @@
 using System.IO.Pipes;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
@@ -10,14 +12,12 @@ public static class ServiceIpc
     public const string PipeName = "ClevoLEDKeyboardControl.v2";
 
     /// <summary>
-    /// 分支专用管道：Zones 服务在外接模式（模拟器管道）下不托管标准管道（被主仓库服务占用），
-    /// 改在此管道上托管 IPC。客户端按 <see cref="PipeNamesInOrder"/> 顺序尝试——分支管道不存在时
-    /// CreateFile 立即失败（无连接超时惩罚），因此正式托盘/服务完全不受影响。
+    /// 分支专用 IPC 端口（TCP 环回）：Zones 服务在此端口托管 IPC（标准命名管道被主仓库服务占用；
+    /// 且本机环境会拦截新建 .NET 8 命名管道的数据流，TCP 不受影响）。客户端按
+    /// TCP 分支通道 → 标准命名管道 的顺序尝试：分支通道无监听时 connect 立即失败（零惩罚），
+    /// 生产托盘/服务完全不受影响。
     /// </summary>
-    public const string ForkPipeName = "ClevoLEDKeyboardControlZones.v2";
-
-    /// <summary>客户端尝试顺序：分支管道优先（开发服务），回退标准管道（生产服务）。</summary>
-    public static readonly string[] PipeNamesInOrder = [ForkPipeName, PipeName];
+    public const int ForkIpcPort = 47821;
 
     public const int ProtocolVersion = 1;
     public const int MaximumMessageBytes = 1024 * 1024;
@@ -25,15 +25,42 @@ public static class ServiceIpc
     public static bool TryRequest<TRequest, TResponse>(string kind, TRequest payload, out TResponse? response, int timeoutMs = 750)
     {
         response = default;
-        foreach (var pipeName in PipeNamesInOrder)
-        {
-            if (TryRequestOnPipe(pipeName, kind, payload, out response, timeoutMs))
-            {
-                return true;
-            }
-        }
+        return TryRequestTcpFork(kind, payload, out response, Math.Min(timeoutMs, 400)) ||
+            TryRequestOnPipe(PipeName, kind, payload, out response, timeoutMs);
+    }
 
-        return false;
+    private static bool TryRequestTcpFork<TRequest, TResponse>(string kind, TRequest payload, out TResponse? response, int timeoutMs)
+    {
+        response = default;
+        try
+        {
+            using var client = new TcpClient();
+            var connect = client.ConnectAsync(IPAddress.Loopback, ForkIpcPort);
+            if (!connect.Wait(timeoutMs))
+            {
+                return false; // 分支服务未运行：立即回退标准通道
+            }
+
+            using var stream = client.GetStream();
+            stream.ReadTimeout = timeoutMs;
+            stream.WriteTimeout = timeoutMs;
+            var request = JsonSerializer.SerializeToUtf8Bytes(new IpcEnvelope<TRequest>(ProtocolVersion, kind, payload));
+            if (request.Length > MaximumMessageBytes) return false;
+            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            writer.Write(request.Length);
+            writer.Write(request);
+            writer.Flush();
+            var length = reader.ReadInt32();
+            if (length <= 0 || length > MaximumMessageBytes) return false;
+            var bytes = reader.ReadBytes(length);
+            return TryParseReply(bytes, out response);
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or SocketException
+            or UnauthorizedAccessException or JsonException or AggregateException)
+        {
+            return false;
+        }
     }
 
     private static bool TryRequestOnPipe<TRequest, TResponse>(string pipeName, string kind, TRequest payload, out TResponse? response, int timeoutMs)

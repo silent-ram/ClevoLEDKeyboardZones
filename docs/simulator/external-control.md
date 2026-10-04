@@ -35,14 +35,14 @@ dotnet run --project ColorfulLedKeyboard.Service
   - 生产路径（未设环境变量）逐字节保持既有行为：`SetColor` 三槽位写，绝不出现分区命令。
     真实三区机型的效果管线属后续工作（见 dchu-protocol-findings.md 9.9：能力位仅必要条件，
     不得作为运行时门控）。
-- **服务侧 IPC 托管在分支专用管道** `ClevoLEDKeyboardControlZones.v2`（标准管道
-  `ClevoLEDKeyboardControl.v2` 被已安装主服务占用，无法重复创建）。客户端按"分支→标准"
-  顺序尝试：本仓库托盘连到本仓库服务，主仓库托盘对分支管道的连接立即失败后回退标准
-  管道，生产端不受影响。托盘的设置保存经 IPC 由本服务落盘（LocalSystem 权限不受
-  ProgramData 目录 ACL 限制）并即时生效。
-- **模拟器侧**：管道服务端随窗口创建启动；断连自动回到等待，服务端重启自动重连。
+- **服务侧 IPC 托管在 TCP 环回分支通道** 127.0.0.1:47821（标准命名管道被已安装主服务
+  占用，且本机环境会拦截新建 .NET 8 命名管道的数据流，TCP 不受影响）。客户端按
+  "TCP 分支通道 → 标准命名管道"顺序尝试：分支通道无监听时 connect 立即失败，主仓库
+  托盘/服务不受影响。托盘的设置保存经 IPC 由本服务落盘（管理员权限不受 ProgramData
+  目录 ACL 限制）并即时生效。
+- **模拟器侧**：TCP 服务端随窗口创建启动；断连自动回到等待，服务端重启自动重连。
 
-## 线路协议（UTF-8 按行）
+## 线路协议（UTF-8 按行，TCP 环回 127.0.0.1:47820）
 
 | 方向 | 行 | 含义 |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ dotnet run --project ColorfulLedKeyboard.Service
 | 服务端 → 客户端 | `ERR message` | 协议错误 |
 
 编解码纯函数在 `ColorfulLedKeyboard.Core/SimulatorPipeTransport.cs`（`Format*`/`TryParse*`），
-客户端与服务端共用，单测覆盖（`SimulatorPipeTransportTests`，31 例）。
+客户端与服务端共用，单测覆盖（`SimulatorPipeTransportTests`）。
 
 可靠性语义：模拟器未启动时写入**静默丢弃**（`DroppedWrites` 计数，不抛异常——服务效果
 循环的 DllNotFoundException 重试路径只针对真实驱动缺失）；读取返回 0x80000002（不支持，
@@ -61,14 +61,13 @@ dotnet run --project ColorfulLedKeyboard.Service
 
 ## 已知环境限制（开发机排查记录，2026-10-04）
 
-在本仓库的开发环境（ZCode 代理会话内派生的进程树）中，**会话活动期间派生的 .NET (Core/8)
-进程**之间新建命名管道时，连接能建立但数据写入在内核层永久停滞（`WriteFile` 不返回）；
-PowerShell 5.1 进程之间、以及与会话前已启动进程（如已安装的生产服务）之间不受影响。
-这是环境级过滤行为，与本项目代码无关——同一份代码的协议编解码、连接状态机在单测与
+本机环境（2026-10-05 实测，用户自启进程同样命中）会对**新建 .NET 8 命名管道**的数据流
+进行拦截：连接能建立但数据写入在内核层永久停滞（`WriteFile` 不返回）；PowerShell 5.1
+进程之间、TCP 环回、以及与启动较早的进程之间不受影响。这是环境级过滤行为，与本项目
+代码无关——同一份代码的协议编解码、连接状态机在单测与
 UIA 功能测试（T8）中全部通过，且与生产 IPC（`ClevoLEDKeyboardControl.v2`）使用完全相同的
 `StreamReader/StreamWriter` 原语。因此：
 
 - 单测刻意不建真实管道回环（同 `ServiceIpcTests` 只测纯解析的先例）；
-- `functional-test.ps1` 的 T8 只验证连接状态机（连接/接管锁定/断开回退，零数据传输），
-  在任何环境都可复现；
-- 完整的"服务 → 模拟器"数据流请在正常桌面会话（双击启动模拟器、正常控制台启动服务）验证。
+- `functional-test.ps1` 的 T8 只验证连接状态机（连接/接管锁定/断开回退，零数据传输）；
+- 传输层已改为 TCP 环回后，数据流不再依赖命名管道。

@@ -1,10 +1,12 @@
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.IO.Pipes;
 
 namespace ColorfulLedKeyboard.Core;
 
 /// <summary>
-/// 实验用"虚拟驱动"传输：把 DCHU 命令经命名管道转发给模拟器进程（外接控制模式），
+/// 实验用"虚拟驱动"传输：把 DCHU 命令经 TCP 环回（127.0.0.1:47820）转发给模拟器进程（外接控制模式），
 /// 模拟器作为一块虚拟键盘实时渲染，实现"主项目软件控制模拟器键盘"。
 /// 仅当环境变量 <see cref="EnableEnvironmentVariable"/> 启用时由
 /// <see cref="DchuKeyboardDevice.CreateDefault"/> 选用；生产路径（P/Invoke）完全不受影响。
@@ -20,8 +22,11 @@ namespace ColorfulLedKeyboard.Core;
 /// </summary>
 public sealed class SimulatorPipeTransport : IDchuTransport, IDisposable
 {
-    /// <summary>与模拟器 ExternalControlServer 约定的管道名。</summary>
-    public const string DefaultPipeName = "ColorfulLedKeyboardZones.Simulator";
+    /// <summary>与模拟器 ExternalControlServer 约定的 TCP 环回端口。</summary>
+    public const int DefaultPort = 47820;
+
+    /// <summary>通道描述（UI 状态行展示用）。</summary>
+    public const string ChannelDescription = "TCP 127.0.0.1:47820";
 
     /// <summary>启用外接模式的环境变量；值为 1 / true（不分大小写）时生效。</summary>
     public const string EnableEnvironmentVariable = "CLEVO_LED_SIMULATOR_PIPE";
@@ -32,17 +37,18 @@ public sealed class SimulatorPipeTransport : IDchuTransport, IDisposable
     private const int ConnectTimeoutMs = 200;
     private const int MaxAttemptsPerCall = 2;
 
-    private readonly string _pipeName;
+    private readonly int _port;
     private readonly object _gate = new();
-    private NamedPipeClientStream? _pipe;
+    private TcpClient? _client;
+    private NetworkStream? _stream;
     private StreamReader? _reader;
     private StreamWriter? _writer;
     private long _droppedWrites;
     private bool _disposed;
 
-    public SimulatorPipeTransport(string? pipeName = null)
+    public SimulatorPipeTransport(int? port = null)
     {
-        _pipeName = pipeName ?? DefaultPipeName;
+        _port = port ?? DefaultPort;
     }
 
     /// <summary>外接模式是否已通过环境变量启用（供工厂与文档诊断使用）。</summary>
@@ -179,7 +185,7 @@ public sealed class SimulatorPipeTransport : IDchuTransport, IDisposable
 
     private bool EnsureConnected()
     {
-        if (_pipe is { IsConnected: true })
+        if (_client is { Connected: true })
         {
             return true;
         }
@@ -187,18 +193,25 @@ public sealed class SimulatorPipeTransport : IDchuTransport, IDisposable
         Disconnect();
         try
         {
-            var pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.None);
-            pipe.Connect(ConnectTimeoutMs);
-            _pipe = pipe;
-            _reader = new StreamReader(pipe, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
-            _writer = new StreamWriter(pipe, System.Text.Encoding.UTF8, bufferSize: 256, leaveOpen: true)
+            var client = new TcpClient();
+            if (!client.ConnectAsync(IPAddress.Loopback, _port).Wait(ConnectTimeoutMs))
+            {
+                client.Dispose();
+                return false;
+            }
+
+            client.NoDelay = true;
+            _client = client;
+            _stream = client.GetStream();
+            _reader = new StreamReader(_stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
+            _writer = new StreamWriter(_stream, System.Text.Encoding.UTF8, bufferSize: 256, leaveOpen: true)
             {
                 AutoFlush = false,
                 NewLine = "\n",
             };
             return true;
         }
-        catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or TimeoutException or SocketException or AggregateException)
         {
             // 模拟器未启动：快速失败，命令丢弃，效果循环节奏不受影响
             return false;
@@ -209,10 +222,12 @@ public sealed class SimulatorPipeTransport : IDchuTransport, IDisposable
     {
         try { _writer?.Dispose(); } catch { }
         try { _reader?.Dispose(); } catch { }
-        try { _pipe?.Dispose(); } catch { }
+        try { _stream?.Dispose(); } catch { }
+        try { _client?.Dispose(); } catch { }
         _writer = null;
         _reader = null;
-        _pipe = null;
+        _stream = null;
+        _client = null;
     }
 
     public void Dispose()

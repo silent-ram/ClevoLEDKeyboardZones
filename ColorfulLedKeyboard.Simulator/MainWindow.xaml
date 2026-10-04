@@ -78,7 +78,7 @@
                           Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" />
                 <CheckBox x:Name="SwapBrCheck" Content="通道序检验：互换 B/R 字节（红↔蓝立即可辨；白色不变不能作判据）"
                           Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" />
-                <CheckBox x:Name="ExternalControlCheck" Content="外接控制：开放命名管道，供主项目服务转发 DCHU 命令"
+                <CheckBox x:Name="ExternalControlCheck" Content="外接控制：开放 TCP 通道（127.0.0.1:47820），供主项目服务转发 DCHU 命令"
                           Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" IsChecked="True" />
                 <TextBlock x:Name="ExternalStatusText" Text="外接：等待服务连接" FontSize="10.5"
                            Foreground="{StaticResource Brush.Faint}" TextWrapping="Wrap" Margin="14,4,0,0" />
@@ -175,6 +175,6 @@
 
         <TextBlock Grid.Row="6" x:Name="FootnoteText" Margin="0,10,0,0" FontSize="10.5" Foreground="{StaticResource Brush.Faint}"
                    TextWrapping="Wrap"
-                   Text="内置命令流经 FakeDchuTransport 记录，零真实 EC 写入；多分区视图的分区化渲染为实验预览（非生产行为），显示模型 = 命令颜色 × 亮度档；外接模式下主项目服务经命名管道 ColorfulLedKeyboardZones.Simulator 转发命令；--probe-features 走真实驱动但仅读。协议规格：docs/reverse-engineering/dchu-protocol-findings.md 第九节。" />
+                   Text="内置命令流经 FakeDchuTransport 记录，零真实 EC 写入；多分区视图的分区化渲染为实验预览（非生产行为），显示模型 = 命令颜色 × 亮度档；外接模式下主项目服务经 TCP 127.0.0.1:47820 转发命令；--probe-features 走真实驱动但仅读。协议规格：docs/reverse-engineering/dchu-protocol-findings.md 第九节。" />
     </Grid>
 </Window>

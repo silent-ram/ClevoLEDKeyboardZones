@@ -1,5 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
 using System.IO;
-using System.IO.Pipes;
 using System.Text;
 using System.Windows.Threading;
 using ColorfulLedKeyboard.Core;
@@ -7,10 +8,11 @@ using ColorfulLedKeyboard.Core;
 namespace ColorfulLedKeyboard.Simulator;
 
 /// <summary>
-/// 外接控制命名管道服务端：接收 Zones 服务经 <see cref="SimulatorPipeTransport"/> 转发的
-/// DCHU 命令，让本模拟器作为"虚拟键盘"被主项目软件驱动。
-/// 同一时刻至多一个客户端（服务进程唯一）；顺序 accept，客户端断开后回到等待。
-/// 协议（UTF-8 按行）见 SimulatorPipeTransport。全部回调经 Dispatcher 编排回 UI 线程。
+/// 外接控制 TCP 服务端：接收 Zones 服务经 <see cref="SimulatorPipeTransport"/> 转发的
+/// DCHU 命令，让本模拟器作为"虚拟键盘"被主项目软件驱动。TCP 环回 127.0.0.1:47820
+/// （命名管道在本机环境会被拦截数据流，2026-10-05）。同一时刻至多一个客户端
+/// （服务进程唯一）；顺序 accept，客户端断开后回到等待。
+/// 线路协议（UTF-8 按行）见 SimulatorPipeTransport。全部回调经 Dispatcher 编排回 UI 线程。
 /// </summary>
 internal sealed class ExternalControlServer : IDisposable
 {
@@ -19,7 +21,8 @@ internal sealed class ExternalControlServer : IDisposable
     private readonly Func<int, int> _onQuery;                  // command → 读命令结果
     private readonly Action<bool, long> _onStatus;             // (clientConnected, totalCommands)
     private readonly CancellationTokenSource _stop = new();
-    private NamedPipeServerStream? _serving;
+    private TcpListener? _listener;
+    private TcpClient? _serving;
     private Task? _acceptLoop;
     private long _totalCommands;
     private bool _disposed;
@@ -32,7 +35,7 @@ internal sealed class ExternalControlServer : IDisposable
         _onStatus = onStatus;
     }
 
-    public static string PipeName => SimulatorPipeTransport.DefaultPipeName;
+    public static string ChannelDescription => SimulatorPipeTransport.ChannelDescription;
 
     public void Start()
     {
@@ -42,31 +45,29 @@ internal sealed class ExternalControlServer : IDisposable
 
     private async Task AcceptLoopAsync(CancellationToken ct)
     {
+        _listener = new TcpListener(IPAddress.Loopback, SimulatorPipeTransport.DefaultPort);
+        _listener.Start();
         while (!ct.IsCancellationRequested)
         {
-            var pipe = new NamedPipeServerStream(PipeName, PipeDirection.InOut,
-                maxNumberOfServerInstances: 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-            _serving = pipe;
+            TcpClient client;
             try
             {
-                await pipe.WaitForConnectionAsync(ct);
+                client = await _listener.AcceptTcpClientAsync(ct);
             }
             catch (OperationCanceledException)
             {
-                pipe.Dispose();
                 return;
             }
-            catch (IOException)
+            catch (Exception)
             {
-                // 客户端在等待期间断开：回到顶部重建服务端实例
-                pipe.Dispose();
-                continue;
+                // 监听套接字被 Dispose（窗口关闭）：退出
+                return;
             }
 
             Notify(connected: true);
             try
             {
-                await ServeClientAsync(pipe, ct);
+                await ServeClientAsync(client, ct);
             }
             catch
             {
@@ -74,24 +75,24 @@ internal sealed class ExternalControlServer : IDisposable
             }
             finally
             {
-                try { if (pipe.IsConnected) { pipe.Disconnect(); } } catch { }
-                pipe.Dispose();
+                try { client.Close(); } catch { }
             }
 
             Notify(connected: false);
         }
     }
 
-    private async Task ServeClientAsync(NamedPipeServerStream pipe, CancellationToken ct)
+    private async Task ServeClientAsync(TcpClient client, CancellationToken ct)
     {
-        using var reader = new StreamReader(pipe, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
-        using var writer = new StreamWriter(pipe, Encoding.UTF8, bufferSize: 256, leaveOpen: true)
+        using var stream = client.GetStream();
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
+        using var writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 256, leaveOpen: true)
         {
             AutoFlush = true,
             NewLine = "\n",
         };
 
-        while (!ct.IsCancellationRequested && pipe.IsConnected)
+        while (!ct.IsCancellationRequested && client.Connected)
         {
             var line = await reader.ReadLineAsync(ct);
             if (line is null)
@@ -135,7 +136,8 @@ internal sealed class ExternalControlServer : IDisposable
         }
 
         _disposed = true;
-        try { _serving?.Dispose(); } catch { } // 打断等待连接/读取中的异步调用
+        try { _listener?.Stop(); } catch { }
+        try { _serving?.Close(); } catch { }
         _stop.Cancel();
         try { _acceptLoop?.Wait(TimeSpan.FromSeconds(1)); } catch { }
         _stop.Dispose();

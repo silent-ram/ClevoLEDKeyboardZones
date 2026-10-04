@@ -136,7 +136,7 @@ public sealed class SimulatorPipeTransportTests : IDisposable
     [Fact]
     public void WithoutServer_WritesDropSilently_AndReadsReturnSafeNon3Zone()
     {
-        using var transport = new SimulatorPipeTransport("ClevoLEDSimTest." + Guid.NewGuid().ToString("N"));
+        using var transport = new SimulatorPipeTransport(port: 1); // 端口 1 必然拒绝连接：快速失败路径
 
         transport.SetData(0x67, 0x10000000); // 不抛出即通过：效果循环节奏不受模拟器缺席影响
         Assert.Equal(unchecked((int)0x80000002u), transport.GetInteger(0x52));

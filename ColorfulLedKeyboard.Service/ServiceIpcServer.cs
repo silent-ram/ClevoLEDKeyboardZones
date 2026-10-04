@@ -1,14 +1,19 @@
 using ColorfulLedKeyboard.Core;
-using System.Diagnostics;
-using System.IO.Pipes;
-using System.Runtime.InteropServices;
-using System.Security.AccessControl;
-using System.Security.Principal;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
 namespace ColorfulLedKeyboard.Service;
 
+/// <summary>
+/// IPC over TCP loopback（分支专用通道）。已安装的生产服务持有标准命名管道
+/// （ClevoLEDKeyboardControl.v2）；本服务在 127.0.0.1:<see cref="ServiceIpc.ForkIpcPort"/>
+/// 托管同一套 JSON 信封协议（长度前缀 + JSON，与管道版一致）。原因：本机环境会拦截
+/// "新建 .NET 8 命名管道"的数据流（连接成功但数据滞留不出），TCP 不受影响。
+/// 仅接受环回连接。客户端顺序：TCP 分支通道（本服务）→ 标准命名管道（生产服务），
+/// 见 ServiceIpc.TryRequest。
+/// </summary>
 public sealed class ServiceIpcServer : IDisposable
 {
     private readonly ILogger<ServiceIpcServer> _logger;
@@ -22,135 +27,150 @@ public sealed class ServiceIpcServer : IDisposable
 
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var listener = new TcpListener(IPAddress.Loopback, ServiceIpc.ForkIpcPort);
+        listener.Start();
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "IPC accept failed");
+                    continue;
+                }
+
+                _ = HandleClientAsync(client, cancellationToken);
+            }
+        }
+        finally
+        {
+            try { listener.Stop(); } catch { }
+        }
+    }
+
+    private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
+    {
+        using (client)
         {
             try
             {
-                var pipe = CreatePipe();
-                await pipe.WaitForConnectionAsync(cancellationToken);
-                _ = HandleConnectedPipeAsync(pipe, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-            catch (Exception ex) { _logger.LogWarning(ex, "IPC request failed"); }
-        }
-    }
-
-    private async Task HandleConnectedPipeAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
-    {
-        using (pipe)
-        {
-            try { await HandleAsync(pipe, cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-            catch (Exception ex) { _logger.LogWarning(ex, "IPC client request failed"); }
-        }
-    }
-
-    private static NamedPipeServerStream CreatePipe()
-    {
-        var security = new PipeSecurity();
-        // 仅 SYSTEM 身份可把对象所有者设为 LocalSystem；管理员/用户控制台身份设置会抛
-        // IOException（"这个安全 ID 不能分配为此对象的所有者"）——非 SYSTEM 时保持默认所有者
-        if (WindowsIdentity.GetCurrent().IsSystem)
-        {
-            security.SetOwner(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
-        }
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-            PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-            PipeAccessRights.FullControl, AccessControlType.Allow));
-        // 分支专用管道：外接模式服务监听此管道（标准管道被主仓库服务占用），客户端
-        // （本仓库托盘）按 分支→标准 顺序尝试，生产端不受影响（见 ServiceIpc.ForkPipeName）。
-        return NamedPipeServerStreamAcl.Create(ServiceIpc.ForkPipeName, PipeDirection.InOut, 8,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 4096, 4096, security);
-    }
-
-    private async Task HandleAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
-    {
-        if (!IsInteractiveLocalClient(pipe))
-        {
-            await ReplyAsync(pipe, false, "Unauthorized client session", false, cancellationToken);
-            return;
-        }
-        using var reader = new BinaryReader(pipe, Encoding.UTF8, leaveOpen: true);
-        var length = reader.ReadInt32();
-        if (length <= 0 || length > ServiceIpc.MaximumMessageBytes)
-        {
-            await ReplyAsync(pipe, false, "Invalid message length", false, cancellationToken);
-            return;
-        }
-        var bytes = reader.ReadBytes(length);
-        using var document = JsonDocument.Parse(bytes);
-        var root = document.RootElement;
-        if (!root.TryGetProperty("Version", out var version) || version.GetInt32() != ServiceIpc.ProtocolVersion ||
-            !root.TryGetProperty("Kind", out var kindElement) || !root.TryGetProperty("Payload", out var payload))
-        {
-            await ReplyAsync(pipe, false, "Invalid envelope", false, cancellationToken);
-            return;
-        }
-        var kind = kindElement.GetString() ?? "";
-        switch (kind)
-        {
-            case "Ping": await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            case "GetSettings":
-            {
-                await _settingsGate.WaitAsync(cancellationToken);
-                try { await ReplyAsync(pipe, true, "", new SettingsStore().LoadLocal(), cancellationToken); }
-                finally { _settingsGate.Release(); }
-                break;
-            }
-            case "GetAutomationStatus":
-                await ReplyAsync(pipe, true, "", ReadJson<AutomationStatus>(AppPaths.AutomationStatusPath), cancellationToken);
-                break;
-            case "GetMultiZoneStatus":
-                await ReplyAsync(pipe, true, "", ReadJson<MultiZoneStatus>(AppPaths.MultiZoneStatusPath), cancellationToken);
-                break;
-            case "GetAudioApplications":
-                await ReplyAsync(pipe, true, "", ReadJson<AudioApplicationsState>(AppPaths.AudioApplicationsStatePath), cancellationToken);
-                break;
-            case "GetMediaPlayback":
-                await ReplyAsync(pipe, true, "", ReadJson<MediaPlaybackState>(AppPaths.MediaPlaybackStatePath), cancellationToken);
-                break;
-            case "GetForegroundState":
-                await ReplyAsync(pipe, true, "", ReadJson<ForegroundAppState>(AppPaths.ForegroundAppStatePath), cancellationToken);
-                break;
-            case "GetAudioSourceStatus":
-                await ReplyAsync(pipe, true, "", AudioSourceStatusFile.ReadFrom(AppPaths.AudioSourceStatusPath), cancellationToken);
-                break;
-            case "GetSettingsRecovery":
-                await ReplyAsync(pipe, true, "", ReadJson<SettingsRecoveryState>(AppPaths.SettingsRecoveryStatePath), cancellationToken);
-                break;
-            case "RestoreLastGoodSettings":
-                await _settingsGate.WaitAsync(cancellationToken);
-                try
+                if (!IsLoopback(client))
                 {
-                    await ReplyAsync(pipe, true, "", new SettingsStore().RestoreLastGoodLocal(), cancellationToken);
+                    using var unauthorized = client.GetStream();
+                    await ReplyAsync(unauthorized, false, "Unauthorized client", false, cancellationToken);
+                    return;
                 }
-                finally { _settingsGate.Release(); }
-                break;
-            case "SaveSettings":
-            {
-                var settings = payload.Deserialize<KeyboardSettings>();
-                if (settings is null) await ReplyAsync(pipe, false, "Invalid settings", false, cancellationToken);
-                else
+
+                using var stream = client.GetStream();
+                using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+                var length = reader.ReadInt32();
+                if (length <= 0 || length > ServiceIpc.MaximumMessageBytes)
                 {
-                    await _settingsGate.WaitAsync(cancellationToken);
-                    try
+                    await ReplyAsync(stream, false, "Invalid message length", false, cancellationToken);
+                    return;
+                }
+                var bytes = reader.ReadBytes(length);
+                using var document = JsonDocument.Parse(bytes);
+                var root = document.RootElement;
+                if (!root.TryGetProperty("Version", out var version) || version.GetInt32() != ServiceIpc.ProtocolVersion ||
+                    !root.TryGetProperty("Kind", out var kindElement) || !root.TryGetProperty("Payload", out var payload))
+                {
+                    await ReplyAsync(stream, false, "Invalid envelope", false, cancellationToken);
+                    return;
+                }
+                var kind = kindElement.GetString() ?? "";
+                switch (kind)
+                {
+                    case "Ping": await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    case "GetSettings":
                     {
-                        new SettingsStore().SaveLocal(settings);
-                        await ReplyAsync(pipe, true, "", true, cancellationToken);
+                        await _settingsGate.WaitAsync(cancellationToken);
+                        try { await ReplyAsync(stream, true, "", new SettingsStore().LoadLocal(), cancellationToken); }
+                        finally { _settingsGate.Release(); }
+                        break;
                     }
-                    finally { _settingsGate.Release(); }
+                    case "GetAutomationStatus":
+                        await ReplyAsync(stream, true, "", ReadJson<AutomationStatus>(AppPaths.AutomationStatusPath), cancellationToken);
+                        break;
+                    case "GetMultiZoneStatus":
+                        await ReplyAsync(stream, true, "", ReadJson<MultiZoneStatus>(AppPaths.MultiZoneStatusPath), cancellationToken);
+                        break;
+                    case "GetAudioApplications":
+                        await ReplyAsync(stream, true, "", ReadJson<AudioApplicationsState>(AppPaths.AudioApplicationsStatePath), cancellationToken);
+                        break;
+                    case "GetMediaPlayback":
+                        await ReplyAsync(stream, true, "", ReadJson<MediaPlaybackState>(AppPaths.MediaPlaybackStatePath), cancellationToken);
+                        break;
+                    case "GetForegroundState":
+                        await ReplyAsync(stream, true, "", ReadJson<ForegroundAppState>(AppPaths.ForegroundAppStatePath), cancellationToken);
+                        break;
+                    case "GetAudioSourceStatus":
+                        await ReplyAsync(stream, true, "", AudioSourceStatusFile.ReadFrom(AppPaths.AudioSourceStatusPath), cancellationToken);
+                        break;
+                    case "GetSettingsRecovery":
+                        await ReplyAsync(stream, true, "", ReadJson<SettingsRecoveryState>(AppPaths.SettingsRecoveryStatePath), cancellationToken);
+                        break;
+                    case "RestoreLastGoodSettings":
+                        await _settingsGate.WaitAsync(cancellationToken);
+                        try
+                        {
+                            await ReplyAsync(stream, true, "", new SettingsStore().RestoreLastGoodLocal(), cancellationToken);
+                        }
+                        finally { _settingsGate.Release(); }
+                        break;
+                    case "SaveSettings":
+                    {
+                        var settings = payload.Deserialize<KeyboardSettings>();
+                        if (settings is null) await ReplyAsync(stream, false, "Invalid settings", false, cancellationToken);
+                        else
+                        {
+                            await _settingsGate.WaitAsync(cancellationToken);
+                            try
+                            {
+                                new SettingsStore().SaveLocal(settings);
+                                await ReplyAsync(stream, true, "", true, cancellationToken);
+                            }
+                            finally { _settingsGate.Release(); }
+                        }
+                        break;
+                    }
+                    case "ForegroundState": SaveJson(AppPaths.ForegroundAppStatePath, payload); await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    case "TypingPulse": SaveJson(AppPaths.TypingPulseStatePath, payload); await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    case "NotificationFlash": SaveJson(AppPaths.NotificationFlashStatePath, payload); await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    case "AudioApplications": SaveJson(AppPaths.AudioApplicationsStatePath, payload); await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    case "MediaPlayback": SaveJson(AppPaths.MediaPlaybackStatePath, payload); await ReplyAsync(stream, true, "", true, cancellationToken); break;
+                    default: await ReplyAsync(stream, false, "Unsupported message kind", false, cancellationToken); break;
                 }
-                break;
             }
-            case "ForegroundState": SaveJson(AppPaths.ForegroundAppStatePath, payload); await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            case "TypingPulse": SaveJson(AppPaths.TypingPulseStatePath, payload); await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            case "NotificationFlash": SaveJson(AppPaths.NotificationFlashStatePath, payload); await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            case "AudioApplications": SaveJson(AppPaths.AudioApplicationsStatePath, payload); await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            case "MediaPlayback": SaveJson(AppPaths.MediaPlaybackStatePath, payload); await ReplyAsync(pipe, true, "", true, cancellationToken); break;
-            default: await ReplyAsync(pipe, false, "Unsupported message kind", false, cancellationToken); break;
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+            {
+                // 客户端断开：正常
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "IPC request failed");
+            }
+        }
+    }
+
+    private static bool IsLoopback(TcpClient client)
+    {
+        try
+        {
+            return client.Client.RemoteEndPoint is IPEndPoint endpoint && IPAddress.IsLoopback(endpoint.Address);
+        }
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
+        {
+            return false;
         }
     }
 
@@ -190,29 +210,10 @@ public sealed class ServiceIpcServer : IDisposable
         await stream.FlushAsync(token);
     }
 
-    private static bool IsInteractiveLocalClient(NamedPipeServerStream pipe)
-    {
-        if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var pid) || pid == 0) return false;
-        try
-        {
-            using var process = Process.GetProcessById((int)pid);
-            var activeSession = WTSGetActiveConsoleSessionId();
-            return process.SessionId > 0 && activeSession != uint.MaxValue && process.SessionId == (int)activeSession;
-        }
-        catch { return false; }
-    }
-
     public void Dispose()
     {
         _stop.Cancel();
         try { _loop?.Wait(TimeSpan.FromSeconds(2)); } catch { }
         _stop.Dispose();
     }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetNamedPipeClientProcessId(IntPtr pipe, out uint clientProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint WTSGetActiveConsoleSessionId();
 }
