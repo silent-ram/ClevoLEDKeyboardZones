@@ -48,7 +48,12 @@ public sealed class ServiceIpcServer : IDisposable
     private static NamedPipeServerStream CreatePipe()
     {
         var security = new PipeSecurity();
-        security.SetOwner(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+        // 仅 SYSTEM 身份可把对象所有者设为 LocalSystem；管理员/用户控制台身份设置会抛
+        // IOException（"这个安全 ID 不能分配为此对象的所有者"）——非 SYSTEM 时保持默认所有者
+        if (WindowsIdentity.GetCurrent().IsSystem)
+        {
+            security.SetOwner(new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+        }
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
             PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
