@@ -22,7 +22,6 @@ internal sealed class ExternalControlServer : IDisposable
     private readonly Action<bool, long> _onStatus;             // (clientConnected, totalCommands)
     private readonly CancellationTokenSource _stop = new();
     private TcpListener? _listener;
-    private TcpClient? _serving;
     private Task? _acceptLoop;
     private long _totalCommands;
     private bool _disposed;
@@ -104,8 +103,8 @@ internal sealed class ExternalControlServer : IDisposable
             {
                 if (isWrite)
                 {
-                    var total = Interlocked.Increment(ref _totalCommands);
-                    _dispatcher.BeginInvoke(_onCommand, command, args);
+                        var total = Interlocked.Increment(ref _totalCommands);
+                    _ = _dispatcher.BeginInvoke(_onCommand, command, args);
                     Notify(connected: true, total);
                     await writer.WriteLineAsync(SimulatorPipeTransport.FormatOkReply());
                 }
@@ -126,7 +125,7 @@ internal sealed class ExternalControlServer : IDisposable
     private void Notify(bool connected) => Notify(connected, Interlocked.Read(ref _totalCommands));
 
     private void Notify(bool connected, long total) =>
-        _dispatcher.BeginInvoke(_onStatus, connected, total);
+        _ = _dispatcher.BeginInvoke(_onStatus, connected, total);
 
     public void Dispose()
     {
@@ -137,7 +136,6 @@ internal sealed class ExternalControlServer : IDisposable
 
         _disposed = true;
         try { _listener?.Stop(); } catch { }
-        try { _serving?.Close(); } catch { }
         _stop.Cancel();
         try { _acceptLoop?.Wait(TimeSpan.FromSeconds(1)); } catch { }
         _stop.Dispose();

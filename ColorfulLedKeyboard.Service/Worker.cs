@@ -42,8 +42,8 @@ public class Worker : BackgroundService
         // 零真实 EC 写。IPC 托管在分支专用管道（标准管道被已安装主服务占用），本仓库托盘的
         // 保存/读取经分支管道到达本服务；音频状态读共享文件，与主服务并行互补。
         _logger.LogInformation(
-            "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard; IPC hosted on {ForkPipe}",
-            SimulatorPipeTransport.EnableEnvironmentVariable, ServiceIpc.ForkPipeName);
+            "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard; IPC hosted on TCP 127.0.0.1:{ForkIpcPort}",
+            SimulatorPipeTransport.EnableEnvironmentVariable, ServiceIpc.ForkIpcPort);
         _ipcServer.Start();
 
         EnsureConfigWatcher();

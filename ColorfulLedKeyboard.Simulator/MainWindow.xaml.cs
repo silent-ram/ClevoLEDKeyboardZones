@@ -26,9 +26,9 @@ public partial class MainWindow : Window
     private const int ZoneExclusiveLightbar = unchecked((int)0xF3000000u);
 
     private FakeDchuTransport _transport = new();
-    private DchuKeyboardDevice _device;
+    private DchuKeyboardDevice _device = null!;
     private KeyboardSettings _settings = BuildSettings("单色呼吸");
-    private LightingFrameGenerator _generator;
+    private LightingFrameGenerator _generator = null!;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(30) };
     private double _elapsedMs;
     private bool _threeZoneView;
