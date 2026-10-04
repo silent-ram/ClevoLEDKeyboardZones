@@ -1,6 +1,8 @@
 ﻿# 虚拟键盘模拟器功能测试（UIA + 像素采样）
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -File functional-test.ps1
 # 前置：Release 已构建；测试全程经 UIA 驱动真实窗口，被测应用本身零真实 EC 写入（FakeDchuTransport）。
+# T8 外接控制只验证连接状态机（不传数据）——代理/沙箱环境会拦截"会话内派生的 .NET 进程"之间的
+# 管道数据流（连接成功但内核 WriteFile 不返回），只连接不写可规避，详见 docs/simulator/external-control.md。
 $ErrorActionPreference = "Stop"
 $exe = Join-Path $PSScriptRoot "bin\Release\net8.0-windows\ColorfulLedKeyboard.Simulator.exe"
 Add-Type -AssemblyName UIAutomationClient
@@ -174,14 +176,37 @@ $bmp.Dispose()
 
 # ============ T7 通道序检验（B/R 互换） ============
 # 暂停 → 记录 zone0 → 勾选互换 → 帧步进(暂停态推进单帧，色相漂移<1°) → 比对 R/B 互换
-Invoke-Button $root "StartButton"; Start-Sleep -Milliseconds 300  # 暂停，冻结 _elapsedMs
+# 容差取 14/10：帧步进理论上仅漂 1.2°，负载下暂停派发可能迟到造成 ~7° 漂移（2026-10-04 实测），
+# 而 B/R 互换的判别签名跨度是整个 R/B 通道（≈120°），宽容差不掩盖错误通道
+Invoke-Button $root "StartButton"; Start-Sleep -Milliseconds 600  # 暂停，冻结 _elapsedMs
 $bmp = Get-WindowBitmap $p; $before = (Get-Pixels $bmp).zone0; $bmp.Dispose()
 Set-Check $root "SwapBrCheck" $true
 Invoke-Button $root "StepButton"  # 帧步进 ×1：elapsed 前进一个 interval 后重渲染
-Start-Sleep -Milliseconds 600
+Start-Sleep -Milliseconds 800
 $bmp = Get-WindowBitmap $p; $after = (Get-Pixels $bmp).zone0; $bmp.Dispose()
-$swapped = (Near @{R=$before.B; G=$before.G; B=$before.R} $after 6) -and (-not (Near $before $after 4))
+$swapped = (Near @{R=$before.B; G=$before.G; B=$before.R} $after 14) -and (-not (Near $before $after 10))
 Report "T7 通道序检验(B/R互换)" $swapped "前=($($before.R),$($before.G),$($before.B)) 后=($($after.R),$($after.G),$($after.B))"
+Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# ============ T8 外接控制状态机（连接/接管锁定/断开回退，只连接不传数据） ============
+$p = Start-Sim
+$root = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowHandle)
+$status1 = Get-TextById $root "ExternalStatusText"
+$enabled1 = ([System.Windows.Automation.AutomationElement] (Find-ById $root "StartButton")).Current.IsEnabled
+# 独立 PowerShell 进程充当"服务"角色：连接 → 保活 3 秒 → 断开（零数据传输，规避沙箱管道过滤）
+$clientCode = "`$c = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'ColorfulLedKeyboardZones.Simulator', [System.IO.Pipes.PipeDirection]::InOut); `$c.Connect(5000); Start-Sleep -Seconds 3; `$c.Dispose()"
+$client = Start-Process powershell -ArgumentList "-NoProfile", "-Command", $clientCode -WindowStyle Hidden -PassThru
+Start-Sleep -Seconds 1
+$status2 = Get-TextById $root "ExternalStatusText"
+$enabled2 = ([System.Windows.Automation.AutomationElement] (Find-ById $root "StartButton")).Current.IsEnabled
+$client.WaitForExit()
+Start-Sleep -Seconds 1
+$status3 = Get-TextById $root "ExternalStatusText"
+$enabled3 = ([System.Windows.Automation.AutomationElement] (Find-ById $root "StartButton")).Current.IsEnabled
+$ok8 = ($status1 -like "*等待服务连接*") -and $enabled1 -and
+       ($status2 -like "*服务已连接*") -and (-not $enabled2) -and
+       ($status3 -like "*等待服务连接*") -and $enabled3
+Report "T8 外接控制状态机" $ok8 "前='$status1' 中='$status2' 后='$status3'"
 Get-Process ColorfulLedKeyboard.Simulator -ErrorAction SilentlyContinue | Stop-Process -Force
 
 # ============ 汇总 ============

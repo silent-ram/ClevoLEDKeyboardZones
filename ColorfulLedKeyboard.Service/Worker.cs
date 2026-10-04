@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 public class Worker : BackgroundService
 {
     private readonly SettingsStore _settingsStore = new();
-    private readonly DchuKeyboardDevice _device = new();
+    private readonly DchuKeyboardDevice _device = DchuKeyboardDevice.CreateDefault();
     private readonly AudioSourceProvider _audioSource;
     private readonly SystemAudioLevelMeter _audioLevelMeter;
     private readonly AudioBandLevelMeter _audioBandLevelMeter;
@@ -37,7 +37,20 @@ public class Worker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _ipcServer.Start();
+        if (SimulatorPipeTransport.Enabled)
+        {
+            // 外接模式（实验，环境变量 CLEVO_LED_SIMULATOR_PIPE=1）：DCHU 命令转发给虚拟键盘模拟器，
+            // 零真实 EC 写。IPC 管道名与已安装主服务相同，这里不托管，避免抢占主 Tray 的控制通道；
+            // 设置变化经文件监视感知，音频状态读共享文件，与主服务并行互补。
+            _logger.LogInformation(
+                "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard, IPC hosting skipped",
+                SimulatorPipeTransport.EnableEnvironmentVariable);
+        }
+        else
+        {
+            _ipcServer.Start();
+        }
+
         EnsureConfigWatcher();
         var audioStatusReconcile = ReconcileAudioStatusAsync(stoppingToken);
         await FlashStartupAsync(stoppingToken);
@@ -105,12 +118,32 @@ public class Worker : BackgroundService
     {
         try
         {
-            _device.SetColor(RgbColor.Black);
+            RenderFrame(_device, RgbColor.Black, SimulatorPipeTransport.Enabled);
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or SEHException)
         {
             _logger.LogWarning(ex, "Keyboard LEDs could not be turned off.");
         }
+    }
+
+    /// <summary>
+    /// 渲染一帧。生产路径 = SetColor 三槽位写（既有行为，逐字节不变）；
+    /// 外接模拟器模式（环境变量开启）= 分区路径直写：三区 + 灯带同色，让模拟器的
+    /// 分区列与灯带条参与显示。环境变量即门控，生产永远不会进入该分支；
+    /// 真实三区机型的效果管线属后续工作（文档 9.9：能力位仅必要条件，不得作为运行时门控）。
+    /// </summary>
+    internal static void RenderFrame(DchuKeyboardDevice device, RgbColor color, bool simulatorMode)
+    {
+        if (!simulatorMode)
+        {
+            device.SetColor(color);
+            return;
+        }
+
+        device.WriteRawLedArgs(DchuZoneProtocol.PackZoneColorArgs(0, color));
+        device.WriteRawLedArgs(DchuZoneProtocol.PackZoneColorArgs(1, color));
+        device.WriteRawLedArgs(DchuZoneProtocol.PackZoneColorArgs(2, color));
+        device.WriteRawLedArgs(DchuZoneProtocol.PackZoneColorArgs(3, color));
     }
 
     private async Task RunEffectAsync(KeyboardSettings settings, CancellationToken stoppingToken)
@@ -143,7 +176,7 @@ public class Worker : BackgroundService
                 settings.OutputBrightnessLimit);
             if (color != lastColor)
             {
-                _device.SetColor(color);
+                RenderFrame(_device, color, SimulatorPipeTransport.Enabled);
                 lastColor = color;
             }
 
@@ -238,7 +271,7 @@ public class Worker : BackgroundService
 
                 if (color != lastColor)
                 {
-                    _device.SetColor(color);
+                    RenderFrame(_device, color, SimulatorPipeTransport.Enabled);
                     lastColor = color;
                 }
 
@@ -492,9 +525,9 @@ public class Worker : BackgroundService
         {
             for (var i = 0; i < 2; i++)
             {
-                _device.SetColor(new RgbColor(255, 255, 255));
+                RenderFrame(_device, new RgbColor(255, 255, 255), SimulatorPipeTransport.Enabled);
                 await Task.Delay(120, stoppingToken);
-                _device.SetColor(RgbColor.Black);
+                RenderFrame(_device, RgbColor.Black, SimulatorPipeTransport.Enabled);
                 await Task.Delay(120, stoppingToken);
             }
         }

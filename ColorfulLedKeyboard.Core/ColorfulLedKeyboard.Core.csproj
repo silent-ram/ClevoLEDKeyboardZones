@@ -10,6 +10,7 @@
     <InternalsVisibleTo Include="ColorfulLedKeyboard.Tests" />
     <InternalsVisibleTo Include="ColorfulLedKeyboard.Tray" />
     <InternalsVisibleTo Include="ColorfulLedKeyboard.Tray.Wpf" />
+    <InternalsVisibleTo Include="ColorfulLedKeyboard.Service" />
   </ItemGroup>
 
 </Project>

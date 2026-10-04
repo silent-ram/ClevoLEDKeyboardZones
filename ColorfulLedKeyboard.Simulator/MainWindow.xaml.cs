@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(30) };
     private double _elapsedMs;
     private bool _threeZoneView;
+    private ExternalControlServer? _externalServer;
+    private bool _internalRunBeforeExternal;
 
     public MainWindow(bool startInThreeZone = false, bool autostart = false, bool forceLightbar = false)
     {
@@ -42,6 +44,15 @@ public partial class MainWindow : Window
         {
             ForceLightbarCheck.IsChecked = true;
         }
+
+        // 外接控制（默认开启）：XAML 里不挂事件避免初始化期触发，这里统一接线
+        ExternalControlCheck.Checked += (_, _) => StartExternalServer();
+        ExternalControlCheck.Unchecked += (_, _) => StopExternalServer();
+        if (ExternalControlCheck.IsChecked == true)
+        {
+            StartExternalServer();
+        }
+
         _timer.Tick += (_, _) => Tick();
         if (autostart)
         {
@@ -50,7 +61,11 @@ public partial class MainWindow : Window
             StartButton.Content = "⏸ 暂停";
         }
 
-        Closed += (_, _) => _timer.Stop();
+        Closed += (_, _) =>
+        {
+            _timer.Stop();
+            _externalServer?.Dispose();
+        };
     }
 
     private static KeyboardSettings BuildSettings(string effectName) => new()
@@ -341,5 +356,79 @@ public partial class MainWindow : Window
         }
 
         UpdateBrightnessBar((int)(e.NewValue / 100d * 255), $"亮度 {(int)e.NewValue}%（单区管线软件缩放）");
+    }
+
+    // ---- 外接控制（主项目服务 → 命名管道 → 本键盘）----
+
+    private void StartExternalServer()
+    {
+        if (_externalServer is not null)
+        {
+            return;
+        }
+
+        _externalServer = new ExternalControlServer(
+            onCommand: OnExternalCommand,
+            onQuery: OnExternalQuery,
+            onStatus: UpdateExternalStatus);
+        _externalServer.Start();
+        UpdateExternalStatus(false, 0);
+    }
+
+    private void StopExternalServer()
+    {
+        _externalServer?.Dispose();
+        _externalServer = null;
+        ResumeInternalDemo();
+        ExternalStatusText.Text = "外接：已停用";
+    }
+
+    private void OnExternalCommand(int command, int args) => OnCommandSent(command, args);
+
+    private int OnExternalQuery(int command)
+    {
+        // 能力探测按当前视图如实回答：三区视图报 0x00400000，单区视图报"命令不支持"
+        if (command == DchuZoneProtocol.GetBiosFeatures1Command && _threeZoneView)
+        {
+            return unchecked((int)0x00400000u);
+        }
+
+        return unchecked((int)0x80000002u);
+    }
+
+    private void UpdateExternalStatus(bool connected, long total)
+    {
+        if (connected)
+        {
+            // 服务接管渲染期间暂停内置演示并锁定播放控制，避免两路信号叠加闪烁
+            if (_timer.IsEnabled)
+            {
+                _internalRunBeforeExternal = true;
+                _timer.Stop();
+                StartButton.Content = "▶ 开始";
+            }
+
+            StartButton.IsEnabled = false;
+            StepButton.IsEnabled = false;
+            ExternalStatusText.Text = $"外接：服务已连接，正在接管渲染（内置演示已暂停；累计命令 {total} 条）";
+        }
+        else
+        {
+            ResumeInternalDemo();
+            ExternalStatusText.Text = $"外接：等待服务连接（管道 {ExternalControlServer.PipeName}；累计命令 {total} 条）";
+        }
+    }
+
+    private void ResumeInternalDemo()
+    {
+        StartButton.IsEnabled = true;
+        StepButton.IsEnabled = true;
+        if (_internalRunBeforeExternal && !_timer.IsEnabled && _generator is not null)
+        {
+            _timer.Start();
+            StartButton.Content = "⏸ 暂停";
+        }
+
+        _internalRunBeforeExternal = false;
     }
 }

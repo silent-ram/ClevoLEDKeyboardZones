@@ -27,6 +27,19 @@
 
 自 v3.5.0 起，托盘程序迁移到 WPF（`ColorfulLedKeyboard.Tray.Wpf` 项目，产物名仍为 `ColorfulLedKeyboard.Tray.exe`），默认深色"仪器面板"视觉，支持深浅主题与自定义强调色（默认 #0080FF）。原 WinForms 托盘（`ColorfulLedKeyboard.Tray` 项目）保留在解决方案中作为参考实现，可运行 `scripts/publish.ps1 -TrayWinForms` 临时产出。
 
+## 实验性内容（本仓库特有）
+
+- **三区 + 灯带协议实现与门控**：`DchuZoneProtocol` 编码（BRG 字节序、0xFZ 前缀）、
+  能力位探测（GET_BIOS_FEATURES_1 的 0x00400000 位）；单区管线输出流在有无能力位时
+  逐字节一致（自动化保证），协议细节见
+  [`docs/reverse-engineering/dchu-protocol-findings.md`](docs/reverse-engineering/dchu-protocol-findings.md) 第九节。
+  灯带（zone 3）是否下发完全由调用方决定，本仓库**不做机型检测**。
+- **虚拟键盘模拟器**（仅开发用途，不进发布产物）：单区视图复刻 Worker 管线、三区视图
+  独立驱动分区/灯带、B/R 通道互换检验、加速播放与帧步进。
+- **外接控制**：模拟器作为"虚拟键盘"，由本仓库服务经命名管道驱动渲染（环境变量
+  `CLEVO_LED_SIMULATOR_PIPE=1` 启用，零真实 EC 写入，生产路径不受影响），详见
+  [`docs/simulator/external-control.md`](docs/simulator/external-control.md)。
+
 ## 下载与安装
 
 - [下载最新正式版安装包](https://github.com/silent-ram/ClevoLEDKeyboardControl/releases/latest/download/ClevoLEDKeyboardControlSetup.exe)

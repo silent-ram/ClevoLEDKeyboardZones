@@ -37,6 +37,19 @@ public sealed class DchuKeyboardDevice
         _transport = transport;
     }
 
+    /// <summary>
+    /// 默认构造入口（服务使用）：环境变量 <see cref="SimulatorPipeTransport.EnableEnvironmentVariable"/>
+    /// 启用时走模拟器命名管道（外接控制模式，零真实 EC 写，命令转发给虚拟键盘渲染）；
+    /// 否则 P/Invoke 直通，与既有生产行为完全一致。
+    /// </summary>
+    public static DchuKeyboardDevice CreateDefault() =>
+        SimulatorPipeTransport.Enabled
+            ? new DchuKeyboardDevice(new SimulatorPipeTransport())
+            : new DchuKeyboardDevice();
+
+    /// <summary>诊断/测试：当前设备是否走模拟器管道（外接模式）。</summary>
+    internal bool UsesSimulatorPipe => _transport is SimulatorPipeTransport;
+
     // ---- 单区路径（现有行为，逐字节保持不变）----
 
     /// <summary>把整块键盘面板设为指定颜色（三槽位写：Local4=0/1/2，最后一次触发 EC mode 5 应用）。</summary>
@@ -58,6 +71,16 @@ public sealed class DchuKeyboardDevice
     private void WriteSequenceSlot(RgbColor color, int slot)
     {
         _transport.SetData(SetDchuLedCommand, BuildSequenceSlotArgs(color, slot));
+    }
+
+    /// <summary>
+    /// 裸写一条 0x67 ARGS（仅供外接模拟器模式的分区渲染使用）。环境变量即门控，
+    /// 不做能力位探测——模拟器按当前视图如实应答 0x52，单区视图会答"不支持"，
+    /// 探测门会把外接演示整体挡死。生产路径不得调用。
+    /// </summary>
+    internal void WriteRawLedArgs(int args)
+    {
+        _transport.SetData(SetDchuLedCommand, args);
     }
 
     // ---- 能力探测（读类，零 EC 写）----

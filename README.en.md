@@ -27,6 +27,23 @@ This project is actively maintained as a fork of [xuha233/ClevoRGBControl](https
 
 Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` project; the output binary is still `ColorfulLedKeyboard.Tray.exe`), with a dark "instrument panel" look by default, light/dark themes, and custom accent colors (default #0080FF). The legacy WinForms tray (the `ColorfulLedKeyboard.Tray` project) stays in the solution as a reference implementation and can still be produced via `scripts/publish.ps1 -TrayWinForms`.
 
+## What is experimental here (fork-only)
+
+- **Three-zone + lightbar protocol with gating**: `DchuZoneProtocol` encoding (BRG byte order,
+  0xFZ prefix), capability-bit probing (GET_BIOS_FEATURES_1 bit 0x00400000). The single-zone
+  pipeline's output stream is byte-identical with or without the capability bit (enforced by
+  tests); protocol details in
+  [`docs/reverse-engineering/dchu-protocol-findings.md`](docs/reverse-engineering/dchu-protocol-findings.md), section 9.
+  Whether the lightbar (zone 3) is addressed is entirely up to the caller — this fork does
+  **no model detection**.
+- **Virtual keyboard simulator** (dev-only, never shipped): single-zone view mirrors the
+  Worker pipeline; three-zone view drives zones/lightbar independently; B/R channel-swap
+  check; fast-forward and frame stepping.
+- **External control**: the simulator acts as a virtual keyboard driven by this fork's service
+  over a named pipe (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
+  path unaffected), see
+  [`docs/simulator/external-control.md`](docs/simulator/external-control.md).
+
 ## Download & Install
 
 - [Download the latest stable installer](https://github.com/silent-ram/ClevoLEDKeyboardControl/releases/latest/download/ClevoLEDKeyboardControlSetup.exe)
