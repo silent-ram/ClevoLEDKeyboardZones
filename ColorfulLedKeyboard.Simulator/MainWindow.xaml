@@ -1,0 +1,156 @@
+<Window x:Class="ColorfulLedKeyboard.Simulator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ClevoLEDKeyboardControl 分区模拟器（仅开发用途）"
+        Width="760" Height="720" MinWidth="640" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Brush.Window}"
+        FontFamily="Microsoft YaHei UI" FontSize="12"
+        Foreground="{StaticResource Brush.Text}">
+    <Grid Margin="18,14,18,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 头部 -->
+        <StackPanel Grid.Row="0">
+            <StackPanel Orientation="Horizontal">
+                <Border Width="4" Height="22" Background="{StaticResource Brush.Spectrum}" CornerRadius="2" />
+                <TextBlock Text="虚拟键盘模拟器" FontSize="18" FontWeight="Bold" Margin="10,0,0,0" />
+                <TextBlock Text="仅开发用途 · 不进发布产物" FontSize="11" Foreground="{StaticResource Brush.Faint}"
+                           VerticalAlignment="Bottom" Margin="10,0,0,3" />
+            </StackPanel>
+            <TextBlock x:Name="SubtitleText" Foreground="{StaticResource Brush.Muted}" Margin="14,4,0,0"
+                       Text="进程内 DchuKeyboardDevice + FakeDchuTransport：现有单区管线 + 实验性三区/灯带协议可视化" />
+        </StackPanel>
+
+        <Rectangle Grid.Row="1" Height="2" Margin="0,10,0,14" Fill="{StaticResource Brush.Spectrum}" RadiusX="1" RadiusY="1" />
+
+        <!-- 键盘三区 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
+                    BorderThickness="1" CornerRadius="10" Padding="14,10">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="90" />
+                        </Grid.ColumnDefinitions>
+                        <Border x:Name="Zone0Border" Grid.Column="0" Height="230" CornerRadius="8,0,0,8"
+                                Background="{StaticResource Brush.Field}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" />
+                        <Border x:Name="Zone1Border" Grid.Column="1" Height="230" Margin="-1,0,0,0"
+                                Background="{StaticResource Brush.Field}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" />
+                        <Border x:Name="Zone2Border" Grid.Column="2" Height="230" Margin="-1,0,0,0" CornerRadius="0,8,8,0"
+                                Background="{StaticResource Brush.Field}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" />
+                    </Grid>
+                    <Grid Margin="0,6,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="90" />
+                            <ColumnDefinition Width="90" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="左（0xF0）" FontSize="10.5" Foreground="{StaticResource Brush.Faint}" TextAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="中（0xF1）" FontSize="10.5" Foreground="{StaticResource Brush.Faint}" TextAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="右（0xF2）" FontSize="10.5" Foreground="{StaticResource Brush.Faint}" TextAlignment="Center" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Stretch">
+                <TextBlock Text="视图" Foreground="{StaticResource Brush.Muted}" FontSize="11.5" />
+                <Button x:Name="ViewButton" Content="当前：单分区视图（点此切三区）" Height="34" Margin="0,6,0,0"
+                        Background="#2b3a5e" BorderBrush="Transparent" FontWeight="Bold" Click="OnToggleView" />
+                <TextBlock Text="三区视图下按色相偏移独立驱动左/中/右分区（0xF0/0xF1/0xF2），现有单区管线仍走 SetColor"
+                           FontSize="10.5" Foreground="{StaticResource Brush.Faint}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                <CheckBox x:Name="ForceLightbarCheck" Content="强制包含灯带 0xF3（模拟灯带机型，仅三区视图）"
+                          Foreground="{StaticResource Brush.Muted}" Margin="0,10,0,0" />
+                <CheckBox x:Name="FastForwardCheck" Content="加速播放 ×8（快进时间驱动效果）"
+                          Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" />
+                <CheckBox x:Name="SwapBrCheck" Content="通道序检验：互换 B/R 字节（红↔蓝立即可辨；白色不变不能作判据）"
+                          Foreground="{StaticResource Brush.Muted}" Margin="0,6,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 灯带 -->
+        <StackPanel Grid.Row="3" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="LightbarBorder" Height="16" CornerRadius="8" Background="{StaticResource Brush.Field}"
+                        BorderBrush="{StaticResource Brush.Border}" BorderThickness="1" />
+                <TextBlock Grid.Column="1" x:Name="LightbarHintText" Text="灯带（仅收到 0xF3 时点亮）" FontSize="10.5"
+                           Foreground="{StaticResource Brush.Faint}" VerticalAlignment="Center" Margin="8,0,0,0" />
+            </Grid>
+        </StackPanel>
+
+        <!-- 状态行 -->
+        <Border Grid.Row="4" Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="模式：" Foreground="{StaticResource Brush.Muted}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" x:Name="ModeText" Text="—" FontWeight="Bold" VerticalAlignment="Center" MinWidth="150" />
+                <Grid Grid.Column="2" Margin="14,0" VerticalAlignment="Center" Width="220" HorizontalAlignment="Left">
+                    <Border Height="8" CornerRadius="4" Background="{StaticResource Brush.Field}" HorizontalAlignment="Stretch" />
+                    <Border x:Name="BrightnessBar" Height="8" CornerRadius="4" HorizontalAlignment="Left"
+                            Width="0" Background="{StaticResource Brush.Spectrum}" />
+                </Grid>
+                <TextBlock Grid.Column="3" x:Name="BrightnessText" Text="亮度 —" Foreground="{StaticResource Brush.Muted}"
+                           VerticalAlignment="Center" FontSize="11" />
+            </Grid>
+        </Border>
+
+        <!-- 控制行 -->
+        <Border Grid.Row="5" Background="{StaticResource Brush.Panel}" BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,12,0,0">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="效果：" Foreground="{StaticResource Brush.Muted}" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" x:Name="EffectBox" Width="180" HorizontalAlignment="Left"
+                              SelectionChanged="OnEffectChanged" />
+                    <TextBlock Grid.Column="2" Text="亮度：" Foreground="{StaticResource Brush.Muted}" VerticalAlignment="Center" Margin="14,0,0,0" />
+                    <Slider Grid.Column="3" x:Name="BrightnessSlider" Width="160" Minimum="0" Maximum="100" Value="70"
+                            VerticalAlignment="Center" ValueChanged="OnBrightnessChanged" />
+                </Grid>
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="StartButton" Content="▶ 开始" Width="110" Height="30" Click="OnToggleRun" />
+                    <TextBlock Grid.Column="1" x:Name="LastCommandText" Text="最近命令：—" FontSize="10.5"
+                               Foreground="{StaticResource Brush.Faint}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                    <Button Grid.Column="2" Content="帧步进 ×1" Width="90" Height="30" Click="OnStepOnce" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="6" x:Name="FootnoteText" Margin="0,10,0,0" FontSize="10.5" Foreground="{StaticResource Brush.Faint}"
+                   TextWrapping="Wrap"
+                   Text="命令流全部经 FakeDchuTransport 记录，零真实 EC 写入；--probe-features 走真实驱动但仅读（GET_BIOS_FEATURES_1）。协议规格：docs/reverse-engineering/dchu-protocol-findings.md 第九节。" />
+    </Grid>
+</Window>

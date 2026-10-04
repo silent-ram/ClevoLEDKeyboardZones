@@ -5,4 +5,6 @@
   <Project Path="ColorfulLedKeyboard.Tests/ColorfulLedKeyboard.Tests.csproj" />
   <Project Path="ColorfulLedKeyboard.Tray/ColorfulLedKeyboard.Tray.csproj" />
   <Project Path="ColorfulLedKeyboard.Tray.Wpf/ColorfulLedKeyboard.Tray.Wpf.csproj" />
+  <!-- 仅开发用途：虚拟键盘模拟器，不进任何发布产物（publish.ps1 / Installer 不引用） -->
+  <Project Path="ColorfulLedKeyboard.Simulator/ColorfulLedKeyboard.Simulator.csproj" />
 </Solution>

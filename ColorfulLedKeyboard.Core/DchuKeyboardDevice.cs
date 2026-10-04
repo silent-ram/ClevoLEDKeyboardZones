@@ -70,6 +70,9 @@ public sealed class DchuKeyboardDevice
     /// <summary>
     /// 三区 RGB 键盘能力位（0x00400000）探测，结果缓存。
     /// 探测异常或命令不支持（如 0x80000002）一律按 false 处理——安全默认，回退单区路径。
+    /// <para>**实测警示（P955ET1，2026-10）**：本机返回 0x04690025，该位置位但物理键盘为单分区——
+    /// 能力位只是必要条件而非充分条件。因此分区 API 的运行时前提还包含：
+    /// 服务效果管线不调用分区 API（仅模拟器三区视图显式调用）；详见文档第九节 9.9。</para>
     /// </summary>
     public bool Has3ZoneKeyboard
     {

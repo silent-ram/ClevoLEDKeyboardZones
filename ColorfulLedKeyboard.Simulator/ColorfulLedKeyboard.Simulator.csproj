@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 仅开发用途：虚拟键盘模拟器（实验性三区/灯带可视化）。
+       不进任何发布产物：publish.ps1 与 Installer 均不引用本工程。 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>ColorfulLedKeyboard.Simulator</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ColorfulLedKeyboard.Core\ColorfulLedKeyboard.Core.csproj" />
+  </ItemGroup>
+
+  <!-- 本机装有厂商驱动时自动复制到输出目录，供能力探测参数与真实传输读取（仅读操作，零 EC 写入） -->
+  <ItemGroup>
+    <None Include="$(ProgramFiles)\ClevoLEDKeyboardControl\Service\InsydeDCHU.dll"
+          Condition="Exists('$(ProgramFiles)\ClevoLEDKeyboardControl\Service\InsydeDCHU.dll')"
+          Link="InsydeDCHU.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

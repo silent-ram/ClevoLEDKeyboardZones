@@ -1,0 +1,23 @@
+<Application x:Class="ColorfulLedKeyboard.Simulator.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <SolidColorBrush x:Key="Brush.Window" Color="#10141d" />
+        <SolidColorBrush x:Key="Brush.Panel" Color="#171c26" />
+        <SolidColorBrush x:Key="Brush.Border" Color="#232e45" />
+        <SolidColorBrush x:Key="Brush.Field" Color="#0d1120" />
+        <SolidColorBrush x:Key="Brush.Text" Color="#e9eef7" />
+        <SolidColorBrush x:Key="Brush.Muted" Color="#93a0b6" />
+        <SolidColorBrush x:Key="Brush.Faint" Color="#6d7a92" />
+        <LinearGradientBrush x:Key="Brush.Spectrum" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#FF4E42" Offset="0" />
+            <GradientStop Color="#FF9A3C" Offset="0.18" />
+            <GradientStop Color="#FFD84A" Offset="0.34" />
+            <GradientStop Color="#4ADE80" Offset="0.52" />
+            <GradientStop Color="#38C8F0" Offset="0.70" />
+            <GradientStop Color="#6E8BFF" Offset="0.86" />
+            <GradientStop Color="#E05CE8" Offset="1" />
+        </LinearGradientBrush>
+    </Application.Resources>
+</Application>
