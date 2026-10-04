@@ -195,26 +195,46 @@ public class Worker : BackgroundService
             RgbColor? last1 = null;
             RgbColor? last2 = null;
             RgbColor? last3 = null;
+            // 管道模式：模拟器晚启动/断连重连会让早期帧丢失；每秒整帧重发兜底（生产路径纯去重）
+            var resendPeriod = SimulatorPipeTransport.Enabled ? TimeSpan.FromSeconds(1) : Timeout.InfiniteTimeSpan;
+            var nextResend = DateTimeOffset.UtcNow + resendPeriod;
 
             while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
             {
                 var elapsed = clock.Elapsed.TotalMilliseconds;
-                var frame = new List<(int Zone, RgbColor Color)>(4);
                 var z0 = generators[0].NextAtElapsed(settings.Brightness, elapsed);
-                if (z0 != last0) { frame.Add((0, z0)); last0 = z0; }
                 var z1 = generators[1].NextAtElapsed(settings.Brightness, elapsed);
-                if (z1 != last1) { frame.Add((1, z1)); last1 = z1; }
                 var z2 = generators[2].NextAtElapsed(settings.Brightness, elapsed);
-                if (z2 != last2) { frame.Add((2, z2)); last2 = z2; }
+                RgbColor? z3 = null;
                 if (lightbarGenerator is not null)
                 {
-                    var z3 = lightbarGenerator.NextAtElapsed(settings.Brightness, elapsed);
-                    if (z3 != last3) { frame.Add((3, z3)); last3 = z3; }
+                    z3 = lightbarGenerator.NextAtElapsed(settings.Brightness, elapsed);
+                }
+
+                var resendDue = DateTimeOffset.UtcNow >= nextResend;
+                var frame = new List<(int Zone, RgbColor Color)>(4);
+                var changed = false;
+                if (z0 != last0) { frame.Add((0, z0)); last0 = z0; changed = true; }
+                if (z1 != last1) { frame.Add((1, z1)); last1 = z1; changed = true; }
+                if (z2 != last2) { frame.Add((2, z2)); last2 = z2; changed = true; }
+                if (z3 is not null && z3 != last3) { frame.Add((3, z3.Value)); last3 = z3; changed = true; }
+                if (!changed && resendDue)
+                {
+                    frame.Add((0, z0));
+                    frame.Add((1, z1));
+                    frame.Add((2, z2));
+                    if (z3 is not null) frame.Add((3, z3.Value));
+                    last0 = z0; last1 = z1; last2 = z2; last3 = z3;
                 }
 
                 if (frame.Count > 0)
                 {
                     RenderMultiZoneFrame(_device, frame);
+                }
+
+                if (resendDue)
+                {
+                    nextResend = DateTimeOffset.UtcNow + resendPeriod;
                 }
 
                 await Task.Delay(interval, stoppingToken);
@@ -246,6 +266,8 @@ public class Worker : BackgroundService
         var generator = new LightingFrameGenerator(settings);
         var nextRuntimeRefresh = DateTimeOffset.UtcNow.Add(RuntimePollInterval(settings));
         RgbColor? lastColor = null;
+        var resendPeriod = SimulatorPipeTransport.Enabled ? TimeSpan.FromSeconds(1) : Timeout.InfiniteTimeSpan;
+        var nextResend = DateTimeOffset.UtcNow + resendPeriod;
 
         while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
         {
@@ -263,10 +285,14 @@ public class Worker : BackgroundService
             var color = ClampOutputBrightness(
                 ApplyNotificationFlash(generator.Next(brightness), settings),
                 settings.OutputBrightnessLimit);
-            if (color != lastColor)
+            // 管道模式：模拟器可能晚于服务启动，最初的帧会被静默丢弃；静态效果颜色不变
+            // 不再重发会让虚拟键盘永远黑屏。每秒强制重发一次当前帧（生产路径保持纯去重）。
+            var resendDue = SimulatorPipeTransport.Enabled && DateTimeOffset.UtcNow >= nextResend;
+            if (color != lastColor || resendDue)
             {
                 RenderFrame(_device, color, SimulatorPipeTransport.Enabled);
                 lastColor = color;
+                if (resendDue) nextResend = DateTimeOffset.UtcNow + resendPeriod;
             }
 
             if (settings.Effect.Type is EffectType.Static or EffectType.Off)
@@ -306,6 +332,8 @@ public class Worker : BackgroundService
         var colorTransitionStarted = DateTimeOffset.UtcNow;
         var nextRuntimeRefresh = DateTimeOffset.UtcNow.Add(RuntimePollInterval(settings));
         RgbColor? lastColor = null;
+        var resendPeriod = SimulatorPipeTransport.Enabled ? TimeSpan.FromSeconds(1) : Timeout.InfiniteTimeSpan;
+        var nextResend = DateTimeOffset.UtcNow + resendPeriod;
 
         // 进入音乐模式立刻刷一次状态文件，避免 Tray 看到陈旧值
         _audioSource.RefreshNow();
@@ -358,10 +386,12 @@ public class Worker : BackgroundService
                     ApplyNotificationFlash(sourceColor.Scale(brightness), settings),
                     settings.OutputBrightnessLimit);
 
-                if (color != lastColor)
+                var resendDue = SimulatorPipeTransport.Enabled && DateTimeOffset.UtcNow >= nextResend;
+                if (color != lastColor || resendDue)
                 {
                     RenderFrame(_device, color, SimulatorPipeTransport.Enabled);
                     lastColor = color;
+                    if (resendDue) nextResend = DateTimeOffset.UtcNow + resendPeriod;
                 }
 
                 await Task.Delay(music.IntervalMs, stoppingToken);

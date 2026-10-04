@@ -32,6 +32,7 @@ rem The tray is single-instance (mutex): the installed production tray makes the
 rem dev tray exit immediately and pops the OLD settings window. Quit it first.
 taskkill /f /im ColorfulLedKeyboard.Simulator.exe >nul 2>&1
 taskkill /f /im ColorfulLedKeyboard.Tray.exe >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq ClevoLEDKeyboardZones Service*" >nul 2>&1
 ping -n 2 127.0.0.1 >nul
 start "" "%SIM%"
 ping -n 2 127.0.0.1 >nul
