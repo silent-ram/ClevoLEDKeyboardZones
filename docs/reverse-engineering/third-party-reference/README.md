@@ -9,7 +9,7 @@ C 代码一律**不复制**进本仓库的 C# 实现（`ColorfulLedKeyboard.Core
 
 ## tuxedo-keyboard（TUXEDO Computers）
 
-来源：<https://github.com/tuxedocomputers/tuxedo-keyboard>
+来源：<https://github.com/tuxedocomputers/tuxedo-keyboard>（`master` 分支 `src/` 目录）
 
 | 文件 | 头部声明 | 版权 |
 | --- | --- | --- |
@@ -20,10 +20,13 @@ C 代码一律**不复制**进本仓库的 C# 实现（`ColorfulLedKeyboard.Core
 | `clevo_wmi.c` | GPL-3.0-or-later | (c) 2020 TUXEDO Computers GmbH |
 
 核对要点：`SUB_RGB_ZONE_0/1/2` 三区参数编码、CUSTOM 模式表、亮度范围（0..255 连续）。
+常量定义位置：`clevo_interfaces.h` 64~69 行（`CLEVO_CMD_SET_KB_RGB_LEDS = 0x67`、
+`SUB_RGB_ZONE_0..3 = 0xF0000000..0xF3000000`、`SUB_RGB_BRIGHTNESS = 0xF4000000`）。
 
 ## clevo-xsm-wmi（社区驱动）
 
-来源：<https://github.com/tuxedocomputers/clevo-xsm-wmi>（历史社区项目，亦见于 codeberg 等镜像）
+来源：GitHub 保留分支 <https://github.com/rafaelgieschke/clevo-xsm-wmi>（`master` 分支 `module/` 目录）；
+原版托管于 Bitbucket `lynthium/clevo-xsm-wmi`。
 
 | 文件 | 头部声明 | 版权 |
 | --- | --- | --- |
@@ -32,6 +35,20 @@ C 代码一律**不复制**进本仓库的 C# 实现（`ColorfulLedKeyboard.Core
 核对要点：`kb_full_color_with_extra_ops` 的静态应用时序（先模式 0x10000000 → 各分区颜色 → 亮度）、
 亮度 4 档（63/126/189/252）、DMI 机型表中 `kb_full_color_with_extra_ops` 条目
 （第 4 区 / 灯带存在的机型依据）、键盘总开关参数。
+
+## 下载与校验（可复现）
+
+```bash
+BASE="https://raw.githubusercontent.com/tuxedocomputers/tuxedo-keyboard/master/src"
+for f in clevo_acpi.c clevo_interfaces.h clevo_keyboard.h clevo_leds.h clevo_wmi.c; do
+  curl -L -o "$f" "$BASE/$f"
+done
+curl -L -o module_clevo-xsm-wmi.c \
+  "https://raw.githubusercontent.com/rafaelgieschke/clevo-xsm-wmi/master/module/clevo-xsm-wmi.c"
+```
+
+校验：每个文件非空（>1KB）；`grep -c "kb_full_color_with_extra_ops" module_clevo-xsm-wmi.c`
+应 ≥ 1（当前 8 处）。2026-10-04 已按此流程重新下载并逐字节比对，与初版归档一致。
 
 ## 与本仓库的许可关系
 
