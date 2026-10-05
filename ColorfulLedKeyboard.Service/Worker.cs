@@ -212,9 +212,11 @@ public class Worker : BackgroundService
                     Math.Min(zoneGenerator2.IntervalMs, lightbarGenerator?.IntervalMs ?? int.MaxValue)),
                 20, 100);
 
-            // 真实三区机型需先切 CUSTOM/静态模式，分区颜色才会显示（文档 9.6 时序）；亮度按
-            // 0..100% 换算 0xF4 原始档（0..255）。两者都只在会话首入/变化时发送：CUSTOM 重复发
-            // 会让 EC 重置灯效状态（换色瞬间闪烁的根因）。模拟器管道模式下同样经 TCP 到达。
+            // 真实三区机型需先切 CUSTOM/静态模式，分区颜色才会显示（文档 9.6 时序）。
+            // 亮度完全走 0xF4（EC 硬件亮度，协议设计如此），分区颜色满档渲染：
+            // 亮度变化 = 单条 0xF4、分区零重写——单区硬件上多区同写会闪色（三槽位同址，
+            // 亮度滑块拖动时的闪烁即源于此）。若个别单区固件忽略 0xF4，多分区模式下
+            // 亮度滑块无可见效果（灯效模式的软件缩放不受影响）。
             if (!_multiZoneModeApplied)
             {
                 _device.ApplyCustomMode();
@@ -236,13 +238,14 @@ public class Worker : BackgroundService
             while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
             {
                 var elapsed = clock.Elapsed.TotalMilliseconds;
-                var z0 = zoneGenerator0.NextAtElapsed(settings.Brightness, elapsed);
-                var z1 = zoneGenerator1.NextAtElapsed(settings.Brightness, elapsed);
-                var z2 = zoneGenerator2.NextAtElapsed(settings.Brightness, elapsed);
+                // 满档渲染（亮度由 0xF4 承担，见入口注释）
+                var z0 = zoneGenerator0.NextAtElapsed(100, elapsed);
+                var z1 = zoneGenerator1.NextAtElapsed(100, elapsed);
+                var z2 = zoneGenerator2.NextAtElapsed(100, elapsed);
                 RgbColor? z3 = null;
                 if (lightbarGenerator is not null)
                 {
-                    z3 = lightbarGenerator.NextAtElapsed(settings.Brightness, elapsed);
+                    z3 = lightbarGenerator.NextAtElapsed(100, elapsed);
                 }
 
                 var resendDue = DateTimeOffset.UtcNow >= nextResend;

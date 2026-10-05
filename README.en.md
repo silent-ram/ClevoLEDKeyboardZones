@@ -59,7 +59,8 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
 - **Multi-zone on real hardware**: the service sends the same DCHU commands straight through
   `InsydeDCHU.dll` to the real EC (`scripts/multizone-real.cmd`, run as admin; it stops and
   auto-restarts the installed production service). Entering multi-zone sends the 9.6 sequence
-  (CUSTOM mode + 0xF4 brightness); on single-zone hardware the three slot writes collapse to
+  (CUSTOM mode; brightness rides on 0xF4 - a single command per change, zero zone rewrites -
+  while zone colors render at full scale); on single-zone hardware the three slot writes collapse to
   one register (one visible color), on true 3-zone machines zones render independently - the
   software path is identical in both cases.
 
