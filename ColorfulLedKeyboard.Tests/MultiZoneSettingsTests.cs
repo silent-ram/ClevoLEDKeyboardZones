@@ -23,7 +23,7 @@ public sealed class MultiZoneSettingsTests
     }
 
     [Fact]
-    public void Normalize_RestrictsUnsupportedTypes_ToStatic()
+    public void Normalize_KeepsLoopingTypes_AndCollapsesLegacyValue()
     {
         var multi = new MultiZoneSettings
         {
@@ -36,7 +36,10 @@ public sealed class MultiZoneSettingsTests
             ]
         }.Normalize();
 
-        Assert.All(multi.Zones, zone => Assert.Equal(EffectType.Static, zone.Type));
+        Assert.Equal(EffectType.Sequence, multi.Zones[0].Type);
+        Assert.Equal(EffectType.Pulse, multi.Zones[1].Type);
+        Assert.Equal(EffectType.Heartbeat, multi.Zones[2].Type);
+        Assert.Equal(EffectType.Static, multi.Zones[3].Type); // 废弃值收敛回固定颜色
     }
 
     [Fact]

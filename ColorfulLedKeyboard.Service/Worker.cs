@@ -53,6 +53,8 @@ public class Worker : BackgroundService
         // 外接模式（实验，环境变量 CLEVO_LED_SIMULATOR_PIPE=1）：DCHU 命令转发给虚拟键盘模拟器，
         // 零真实 EC 写。真实模式：P/Invoke InsydeDCHU.dll 直发真实 EC。两者都把 IPC 托管在
         // 分支专用 TCP 通道（标准管道被已安装主服务占用），本仓库托盘的保存/读取经此到达本服务。
+        _logger.LogInformation("Service instance PID {ProcessId}", Environment.ProcessId);
+
         if (SimulatorPipeTransport.Enabled)
         {
             _logger.LogInformation(

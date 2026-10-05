@@ -44,6 +44,12 @@ taskkill /f /im ColorfulLedKeyboard.Simulator.exe >nul 2>&1
 taskkill /f /im ColorfulLedKeyboard.Tray.exe >nul 2>&1
 taskkill /f /im ColorfulLedKeyboard.Service.exe >nul 2>&1
 ping -n 2 127.0.0.1 >nul
+rem Verify zero leftovers - multiple service instances fight over the EC/IPC
+tasklist /fi "imagename eq ColorfulLedKeyboard.Service.exe" 2>nul | find /i "ColorfulLedKeyboard.Service.exe" >nul && (
+  echo [WARN] service processes still alive - killing again...
+  taskkill /f /im ColorfulLedKeyboard.Service.exe
+  ping -n 2 127.0.0.1 >nul
+)
 
 echo [3/5] building (Release)...
 dotnet build "%ROOT%ColorfulLedKeyboard.Service\ColorfulLedKeyboard.Service.csproj" -c Release --nologo -v q || goto :buildfail

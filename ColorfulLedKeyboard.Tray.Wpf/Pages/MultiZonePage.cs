@@ -15,7 +15,7 @@ namespace ColorfulLedKeyboard.Tray.Wpf.Pages;
 /// </summary>
 public sealed class MultiZonePage : UserControl
 {
-    private static readonly string[] TypeLabels = ["固定颜色", "单色呼吸", "RGB 循环", "关闭"];
+    private static readonly string[] TypeLabels = ["固定颜色", "单色呼吸", "RGB 循环", "循环呼吸", "脉冲", "心跳", "关闭"];
     private static readonly string[] SwatchColors =
     [
         "#FF0000", "#FF8000", "#FFFF00", "#00FF00", "#00FFFF", "#0080FF",
@@ -146,7 +146,10 @@ public sealed class MultiZonePage : UserControl
                 {
                     EffectType.Breathing => 1,
                     EffectType.Rainbow => 2,
-                    EffectType.Off => 3,
+                    EffectType.Sequence => 3,
+                    EffectType.Pulse => 4,
+                    EffectType.Heartbeat => 5,
+                    EffectType.Off => 6,
                     _ => 0,
                 };
                 _zoneColors[zone] = multi.Zones[zone].Color;
@@ -184,7 +187,10 @@ public sealed class MultiZonePage : UserControl
             {
                 1 => EffectType.Breathing,
                 2 => EffectType.Rainbow,
-                3 => EffectType.Off,
+                3 => EffectType.Sequence,
+                4 => EffectType.Pulse,
+                5 => EffectType.Heartbeat,
+                6 => EffectType.Off,
                 _ => EffectType.Static,
             };
             if (_zoneColors[zone] is { Length: > 0 } color)
@@ -261,7 +267,7 @@ public sealed class MultiZonePage : UserControl
     {
         _zoneColors[zone] = colorHex;
         _colorChips[zone].Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex));
-        if (_typeCombos[zone].SelectedIndex == 3)
+        if (_typeCombos[zone].SelectedIndex == 6)
         {
             _typeCombos[zone].SelectedIndex = 0; // 选色隐含“从关闭切到固定颜色”
         }
@@ -271,16 +277,20 @@ public sealed class MultiZonePage : UserControl
 
     private void UpdateZoneControls(int zone)
     {
-        var isOff = _typeCombos[zone].SelectedIndex == 3;
-        var isRainbow = _typeCombos[zone].SelectedIndex == 2;
-        _swatchRows[zone].IsEnabled = !isOff && !isRainbow;
-        _colorChips[zone].IsEnabled = !isOff && !isRainbow;
-        _colorChips[zone].Opacity = isRainbow ? 0.35 : 1;
-        _zoneHints[zone].Text = _typeCombos[zone].SelectedIndex switch
+        var index = _typeCombos[zone].SelectedIndex;
+        var isOff = index == 6;
+        var usesSequence = index is 2 or 3 or 4 or 5; // 循环类：颜色由序列决定
+        _swatchRows[zone].IsEnabled = !isOff && !usesSequence;
+        _colorChips[zone].IsEnabled = !isOff && !usesSequence;
+        _colorChips[zone].Opacity = usesSequence ? 0.35 : 1;
+        _zoneHints[zone].Text = index switch
         {
             1 => "以本区颜色呼吸（周期为默认值 3000 ms）。",
-            2 => "全彩循环，与基色无关。",
-            3 => "本区关闭（黑）。",
+            2 => "全彩循环（默认六色序列），与基色无关。",
+            3 => "循环呼吸（默认六色序列，带呼吸过渡）。",
+            4 => "脉冲（默认六色序列，2000 ms 周期）。",
+            5 => "心跳（默认六色序列，1500 ms 周期）。",
+            6 => "本区关闭（黑）。",
             _ => "本区常亮所选颜色。",
         };
     }

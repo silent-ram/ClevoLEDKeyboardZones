@@ -19,8 +19,8 @@ public enum MultiZoneLayout
 /// 未命中回退普通灯效管线）；灯带（zone 3）不做机型检测，是否下发完全由
 /// <see cref="IncludeLightbar"/> 手动开关（文档 9.4 设计决策：无灯带机型上该命令行为未知）。</para>
 ///
-/// <para>每区灯效复用 <see cref="LightingEffectSettings"/>（UI v1 仅暴露 固定颜色/单色呼吸/
-/// RGB 循环/关闭 四类，归一化时把其他类型收敛回固定颜色），为将来放开完整灯效编辑留好存储。</para>
+/// <para>每区灯效复用 <see cref="LightingEffectSettings"/>（UI 暴露 固定颜色/单色呼吸/RGB 循环/
+/// 循环呼吸/脉冲/心跳/关闭 七类；循环类效果使用其默认颜色序列，周期为各类型默认值）。</para>
 /// </summary>
 public sealed class MultiZoneSettings
 {
@@ -65,10 +65,8 @@ public sealed class MultiZoneSettings
         for (var zone = 0; zone < ZoneCount; zone++)
         {
             var effect = Zones[zone] ?? CreateDefaultZone(zone);
-            if (!Enum.IsDefined(effect.Type) ||
-                effect.Type is not (EffectType.Off or EffectType.Static or EffectType.Breathing or EffectType.Rainbow))
+            if (!Enum.IsDefined(effect.Type))
             {
-                // UI 之外的类型（循环呼吸/脉冲/心跳等）v1 不支持按区配置，收敛回固定颜色
                 effect.Type = EffectType.Static;
             }
 
