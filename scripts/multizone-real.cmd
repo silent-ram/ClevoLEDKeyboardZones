@@ -31,6 +31,9 @@ set ROOT=%CD%\
 set SVC=%ROOT%ColorfulLedKeyboard.Service\bin\Release\net8.0-windows\ColorfulLedKeyboard.Service.exe
 set TRAY=%ROOT%ColorfulLedKeyboard.Tray.Wpf\bin\Release\net8.0-windows10.0.22621.0\ColorfulLedKeyboard.Tray.exe
 set CLEVO_LED_SETTINGS_PATH=%LOCALAPPDATA%\ClevoLEDKeyboardControlZones\settings.json
+rem Explicitly clear the simulator switch: an elevated console may inherit it
+rem from a previous simulator demo session - real mode must send to the real EC.
+set CLEVO_LED_SIMULATOR_PIPE=
 
 echo [1/5] stopping the installed production service (EC is shared)...
 sc stop ClevoLEDKeyboardControlService
@@ -49,6 +52,8 @@ dotnet build "%ROOT%ColorfulLedKeyboard.Tray.Wpf\ColorfulLedKeyboard.Tray.Wpf.cs
 echo [4/5] starting tray...
 start "" "%TRAY%" --settings
 
+echo NOTE: if you enabled the lightbar switch (0xF3) in the simulator demo, turn it
+echo OFF in the multi-zone page before saving - its behavior on this machine is unknown.
 echo [5/5] starting service in REAL mode (commands go to the real keyboard)...
 "%SVC%"
 echo.

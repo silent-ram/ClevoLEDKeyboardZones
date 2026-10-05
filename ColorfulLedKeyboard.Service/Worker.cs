@@ -39,11 +39,20 @@ public class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // 外接模式（实验，环境变量 CLEVO_LED_SIMULATOR_PIPE=1）：DCHU 命令转发给虚拟键盘模拟器，
-        // 零真实 EC 写。IPC 托管在分支专用管道（标准管道被已安装主服务占用），本仓库托盘的
-        // 保存/读取经分支管道到达本服务；音频状态读共享文件，与主服务并行互补。
-        _logger.LogInformation(
-            "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard; IPC hosted on TCP 127.0.0.1:{ForkIpcPort}",
-            SimulatorPipeTransport.EnableEnvironmentVariable, ServiceIpc.ForkIpcPort);
+        // 零真实 EC 写。真实模式：P/Invoke InsydeDCHU.dll 直发真实 EC。两者都把 IPC 托管在
+        // 分支专用 TCP 通道（标准管道被已安装主服务占用），本仓库托盘的保存/读取经此到达本服务。
+        if (SimulatorPipeTransport.Enabled)
+        {
+            _logger.LogInformation(
+                "Simulator pipe mode enabled via {EnvVar}: forwarding DCHU commands to the virtual keyboard; IPC hosted on TCP 127.0.0.1:{ForkIpcPort}",
+                SimulatorPipeTransport.EnableEnvironmentVariable, ServiceIpc.ForkIpcPort);
+        }
+        else
+        {
+            _logger.LogInformation("Real keyboard mode (InsydeDCHU.dll P/Invoke); IPC hosted on TCP 127.0.0.1:{ForkIpcPort}",
+                ServiceIpc.ForkIpcPort);
+        }
+
         _ipcServer.Start();
 
         EnsureConfigWatcher();

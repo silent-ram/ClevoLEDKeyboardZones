@@ -22,4 +22,13 @@
   <ItemGroup>
     <ProjectReference Include="..\ColorfulLedKeyboard.Core\ColorfulLedKeyboard.Core.csproj" />
   </ItemGroup>
+
+  <!-- 本机装有厂商驱动时自动复制到输出目录（真实传输需要；仅开发/演示场景，
+       发布仍由安装器负责放置） -->
+  <ItemGroup>
+    <None Include="$(ProgramFiles)\ClevoLEDKeyboardControl\Service\InsydeDCHU.dll"
+          Condition="Exists('$(ProgramFiles)\ClevoLEDKeyboardControl\Service\InsydeDCHU.dll')"
+          Link="InsydeDCHU.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
