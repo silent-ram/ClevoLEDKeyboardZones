@@ -18,6 +18,7 @@ public class Worker : BackgroundService
     private bool _multiZoneModeApplied;
     private byte _multiZoneBrightnessLevel;
     private bool _multiZoneActive;
+    private OperatingMode _lastLoggedMode = (OperatingMode)(-1);
     private readonly AudioSourceProvider _audioSource;
     private readonly SystemAudioLevelMeter _audioLevelMeter;
     private readonly AudioBandLevelMeter _audioBandLevelMeter;
@@ -73,6 +74,12 @@ public class Worker : BackgroundService
         {
             var settings = BuildRuntimeSettings(_settingsStore.Load());
             _settingsChanged = false;
+
+            if (settings.OperatingMode != _lastLoggedMode)
+            {
+                _lastLoggedMode = settings.OperatingMode;
+                _logger.LogInformation("Active mode: {Mode} (enabled={Enabled})", settings.OperatingMode, settings.Enabled);
+            }
 
             if (_multiZoneActive && (!settings.Enabled || settings.OperatingMode != OperatingMode.MultiZone))
             {
