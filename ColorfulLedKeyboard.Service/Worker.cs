@@ -220,11 +220,17 @@ public class Worker : BackgroundService
         new MultiZoneStatus { CapabilityDetected = true, Active = true }.Save();
         try
         {
+            // 协同效果（RelayFlow/AmbientGradient）：一个效果统一驱动四区（共享时间轴），
+            // 配在哪个区都一样；基准配置取第一个配置了协同效果的区。否则按区独立生成。
+            var cooperativeEffect = multi.Zones.FirstOrDefault(zone =>
+                MultiZoneCooperativeEffects.IsCooperative(zone.Type));
+            var isCooperative = cooperativeEffect is not null;
+
             var zoneGenerator0 = ZoneGenerator(0, multi.Zones[0]);
             var zoneGenerator1 = ZoneGenerator(1, multi.Zones[1]);
             var zoneGenerator2 = ZoneGenerator(2, multi.Zones[2]);
             var lightbarGenerator = multi.IncludeLightbar ? ZoneGenerator(3, multi.Zones[3]) : null;
-            var interval = Math.Clamp(
+            var interval = isCooperative ? 40 : Math.Clamp(
                 Math.Min(Math.Min(zoneGenerator0.IntervalMs, zoneGenerator1.IntervalMs),
                     Math.Min(zoneGenerator2.IntervalMs, lightbarGenerator?.IntervalMs ?? int.MaxValue)),
                 20, 100);
@@ -255,14 +261,30 @@ public class Worker : BackgroundService
             while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
             {
                 var elapsed = clock.Elapsed.TotalMilliseconds;
-                // 满档渲染（亮度由 0xF4 承担，见入口注释）
-                var z0 = zoneGenerator0.NextAtElapsed(100, elapsed);
-                var z1 = zoneGenerator1.NextAtElapsed(100, elapsed);
-                var z2 = zoneGenerator2.NextAtElapsed(100, elapsed);
-                RgbColor? z3 = null;
-                if (lightbarGenerator is not null)
+                RgbColor z0;
+                RgbColor z1;
+                RgbColor z2;
+                RgbColor? z3;
+                if (isCooperative)
                 {
-                    z3 = lightbarGenerator.NextAtElapsed(100, elapsed);
+                    // 协同效果：一个效果统一驱动四区（共享时间轴）；满档渲染（亮度由 0xF4 承担）
+                    var coopFrame = MultiZoneCooperativeEffects.ComputeFrame(cooperativeEffect!, elapsed, multi.IncludeLightbar);
+                    z0 = coopFrame[0]!.Value;
+                    z1 = coopFrame[1]!.Value;
+                    z2 = coopFrame[2]!.Value;
+                    z3 = coopFrame[3];
+                }
+                else
+                {
+                    // 满档渲染（亮度由 0xF4 承担，见入口注释）
+                    z0 = zoneGenerator0.NextAtElapsed(100, elapsed);
+                    z1 = zoneGenerator1.NextAtElapsed(100, elapsed);
+                    z2 = zoneGenerator2.NextAtElapsed(100, elapsed);
+                    z3 = null;
+                    if (lightbarGenerator is not null)
+                    {
+                        z3 = lightbarGenerator.NextAtElapsed(100, elapsed);
+                    }
                 }
 
                 var resendDue = DateTimeOffset.UtcNow >= nextResend;

@@ -3,19 +3,22 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ColorfulLedKeyboard.Core;
+using ColorfulLedKeyboard.Tray.Wpf.Controls;
+using ColorfulLedKeyboard.Tray.Wpf.Dialogs;
 
 namespace ColorfulLedKeyboard.Tray.Wpf.Pages;
 
 /// <summary>
-/// 多分区（实验）页：左/中/右/灯带四区各自的灯效类型与颜色、灯带下发开关、服务端状态。
-/// 保存经宿主窗口统一 ApplyTo(settings.MultiZone)；分区命令是否真的下发由服务端能力位门控，
-/// 未命中自动回退普通灯效（状态行显示）。
-/// 已知限制（v1）：每区仅支持 固定颜色/单色呼吸/RGB 循环/关闭；呼吸周期用各类型的默认值；
-/// 能力位只是必要条件（P955ET1 置位但物理单分区）——单分区硬件上三区写入同址互相覆盖。
+/// 多分区（实验）页：四区各自的灯效类型/颜色/参数、布局选择、协同效果、整套配置预设、灯带开关、
+/// 服务端状态。保存经宿主窗口统一 ApplyTo(settings.MultiZone)。
+/// 差异化功能：① 每区自定义拾色（拾色对话框+色板）② 每区参数（周期/最低亮度）③ 分区协同效果
+/// （接力流动/氛围渐变——四区统一驱动）④ 整套配置命名预设。
 /// </summary>
 public sealed class MultiZonePage : UserControl
 {
-    private static readonly string[] TypeLabels = ["固定颜色", "单色呼吸", "RGB 循环", "循环呼吸", "脉冲", "心跳", "关闭"];
+    private static readonly string[] TypeLabels =
+        ["固定颜色", "单色呼吸", "RGB 循环", "循环呼吸", "脉冲", "心跳", "接力流动（协同）", "氛围渐变（协同）", "关闭"];
+
     private static readonly string[] SwatchColors =
     [
         "#FF0000", "#FF8000", "#FFFF00", "#00FF00", "#00FFFF", "#0080FF",
@@ -33,17 +36,32 @@ public sealed class MultiZonePage : UserControl
     private Border? _lightbarSection;
     private readonly System.Windows.Controls.CheckBox _lightbarCheck = MakeCheckBox("向灯带下发命令（0xF3）");
     private readonly TextBlock _lightbarHint = MakeHint();
-    private readonly System.Windows.Controls.ComboBox[] _typeCombos = new ComboBox[MultiZoneSettings.ZoneCount];
+    private readonly ComboBox[] _typeCombos = new ComboBox[MultiZoneSettings.ZoneCount];
     private readonly Border[] _colorChips = new Border[MultiZoneSettings.ZoneCount];
     private readonly StackPanel[] _swatchRows = new StackPanel[MultiZoneSettings.ZoneCount];
     private readonly TextBlock[] _zoneHints = new TextBlock[MultiZoneSettings.ZoneCount];
     private readonly Border[] _zoneCards = new Border[MultiZoneSettings.ZoneCount];
+    private readonly UiSliderRow[] _periodSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
+    private readonly UiSliderRow[] _minimumSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
+    private readonly UIElement[] _periodHosts = new UIElement[MultiZoneSettings.ZoneCount];
+    private readonly UIElement[] _minimumHosts = new UIElement[MultiZoneSettings.ZoneCount];
+
+    // 预设栏
+    private readonly ComboBox _presetCombo = new() { Width = 200, Height = 28 };
+    private readonly System.Windows.Controls.TextBox _presetNameBox = new() { Width = 180, Height = 28 };
+    private readonly Button _presetSaveButton = MakeButton("保存为预设", 96);
+    private readonly Button _presetApplyButton = MakeButton("应用预设", 96);
+    private readonly Button _presetDeleteButton = MakeButton("删除预设", 96);
+    private bool _loadingPresetCombo;
 
     private bool _loading;
 
     // 分区颜色的唯一数据源（6 位 #RRGGBB 字符串）。WPF Color.ToString() 输出 8 位
     // #AARRGGBB，经 NormalizeHex 会静默回退成红色——画刷只做显示，绝不作为保存来源。
     private readonly string?[] _zoneColors = new string?[MultiZoneSettings.ZoneCount];
+
+    // 预设编辑工作副本（宿主保存时 ApplyTo 会重新写入 settings）
+    private MultiZoneSettings _working = new();
 
     public event EventHandler? Changed;
 
@@ -55,16 +73,35 @@ public sealed class MultiZonePage : UserControl
         var stack = new StackPanel { Margin = new Thickness(0, 0, 24, 8) };
 
         stack.Children.Add(MakeHintParagraph(
-            "实验功能。渲染布局二选一：三区 + 灯带（面向真三区机型，按区独立渲染，服务端按能力位门控，" +
-            "能力位命中但物理键盘为单分区时三区写入会互相覆盖）；单区合并（面向单分区机型——整块键盘一块灯，" +
-            "以『左分区』配置渲染，走与灯效模式相同的单区路径）。灯带不做机型检测，确认机型具备后再开启。"));
+            "实验功能。渲染布局二选一：三区 + 灯带（面向真三区机型，按区独立渲染）；单区合并（面向单分区机型，" +
+            "以『左分区』配置渲染，走与灯效模式相同的单区路径）。『接力流动』『氛围渐变』为分区协同效果——" +
+            "四区统一驱动，配在任意区效果一致（接力流动在单分区硬件上表现为色相摆动）。灯带不做机型检测，确认机型具备后再开启。"));
 
-        _statusText.Text = "服务端状态：读取中…";
-        _switchModeButton = MakeButton("切换到多分区模式（并保存）");
+        _switchModeButton = MakeButton("切换到多分区模式（并保存）", 200);
         _switchModeButton.Visibility = Visibility.Collapsed;
         _switchModeButton.Click += (_, _) => ModeSwitchRequested?.Invoke(this, EventArgs.Empty);
+
+        _statusText.Text = "服务端状态：读取中…";
         stack.Children.Add(MakeCard("服务端状态", _statusText, _modeHintText, _switchModeButton));
 
+        // ---- 预设栏 ----
+        _presetSaveButton.Click += (_, _) => SavePreset();
+        _presetApplyButton.Click += (_, _) => ApplySelectedPreset();
+        _presetDeleteButton.Click += (_, _) => DeleteSelectedPreset();
+        var presetRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
+        presetRow.Children.Add(_presetCombo);
+        _presetNameBox.Margin = new Thickness(8, 0, 0, 0);
+        presetRow.Children.Add(_presetNameBox);
+        _presetSaveButton.Margin = new Thickness(8, 0, 0, 0);
+        presetRow.Children.Add(_presetSaveButton);
+        _presetApplyButton.Margin = new Thickness(8, 0, 0, 0);
+        presetRow.Children.Add(_presetApplyButton);
+        _presetDeleteButton.Margin = new Thickness(8, 0, 0, 0);
+        presetRow.Children.Add(_presetDeleteButton);
+        stack.Children.Add(MakeCard("整套配置预设", presetRow,
+            MakeHintParagraph("『保存为预设』把当前四区配置+布局+灯带存为命名预设（配置文件内，最多 8 个，同名覆盖）；选中后『应用预设』回填页面。")));
+
+        // ---- 布局 ----
         var layoutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
         layoutRow.Children.Add(_layoutZones);
         _layoutSingle.Margin = new Thickness(20, 0, 0, 0);
@@ -73,14 +110,15 @@ public sealed class MultiZonePage : UserControl
         _layoutSingle.Checked += (_, _) => OnLayoutChanged();
         stack.Children.Add(MakeCard("渲染布局", layoutRow, _layoutHint));
 
-        _lightbarHint.Text = "灯带（zone 3）不参与能力位判定：不检测机型，开启即下发 0xF3；无灯带机型上该命令行为未知。";
+        // ---- 灯带 ----
         _lightbarSection = MakeCard("灯带", _lightbarCheck, _lightbarHint);
         stack.Children.Add(_lightbarSection);
 
+        // ---- 四区卡片 ----
         for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
         {
             var zoneIndex = zone;
-            var combo = MakeCombo(TypeLabels);
+            var combo = new ComboBox { ItemsSource = TypeLabels, Width = 150, Height = 28, SelectedIndex = 0 };
             combo.SelectionChanged += (_, _) =>
             {
                 if (_loading) return;
@@ -96,9 +134,16 @@ public sealed class MultiZonePage : UserControl
                 CornerRadius = new CornerRadius(4),
                 BorderThickness = new Thickness(1),
                 VerticalAlignment = VerticalAlignment.Center,
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = "点击打开拾色器",
             };
             chip.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
+            chip.MouseLeftButtonUp += (_, _) => OpenColorPicker(zoneIndex);
             _colorChips[zone] = chip;
+
+            var pickButton = MakeButton("自定义…", 72);
+            pickButton.Height = 24;
+            pickButton.Click += (_, _) => OpenColorPicker(zoneIndex);
 
             var swatches = new StackPanel { Orientation = Orientation.Horizontal };
             foreach (var color in SwatchColors)
@@ -121,12 +166,19 @@ public sealed class MultiZonePage : UserControl
                 };
                 swatches.Children.Add(button);
             }
+
             _swatchRows[zone] = swatches;
+
+            _periodSliders[zone] = new UiSliderRow("周期", 300, 30000, " ms");
+            _minimumSliders[zone] = new UiSliderRow("最低亮度", 0, 100, "%");
+            _periodHosts[zone] = _periodSliders[zone];
+            _minimumHosts[zone] = _minimumSliders[zone];
 
             var hint = MakeHint();
             _zoneHints[zone] = hint;
             var card = MakeCard(MultiZoneSettings.ZoneName(zone),
-                Row("效果", combo), Row("颜色", chip, swatches), hint);
+                Row("效果", combo), Row("颜色", chip, pickButton, swatches),
+                _periodSliders[zone], _minimumSliders[zone], hint);
             _zoneCards[zone] = card;
             stack.Children.Add(card);
         }
@@ -147,26 +199,22 @@ public sealed class MultiZonePage : UserControl
         try
         {
             var multi = settings.MultiZone;
+            _working = multi; // 预设编辑工作副本（ApplyTo 时整体写回）
             for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
             {
-                _typeCombos[zone].SelectedIndex = multi.Zones[zone].Type switch
-                {
-                    EffectType.Breathing => 1,
-                    EffectType.Rainbow => 2,
-                    EffectType.Sequence => 3,
-                    EffectType.Pulse => 4,
-                    EffectType.Heartbeat => 5,
-                    EffectType.Off => 6,
-                    _ => 0,
-                };
+                _typeCombos[zone].SelectedIndex = ZoneTypeToIndex(multi.Zones[zone].Type);
                 _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
+                _periodSliders[zone].Value = multi.Zones[zone].PeriodMs;
+                _minimumSliders[zone].Value = multi.Zones[zone].MinimumBrightness;
                 UpdateZoneControls(zone);
             }
+
             _lightbarCheck.IsChecked = multi.IncludeLightbar;
             _layoutZones.IsChecked = multi.Layout != MultiZoneLayout.SingleMerged;
             _layoutSingle.IsChecked = multi.Layout == MultiZoneLayout.SingleMerged;
+            RefreshPresetCombo(multi);
         }
         finally
         {
@@ -175,9 +223,6 @@ public sealed class MultiZonePage : UserControl
 
         UpdateLayoutVisibility();
 
-        // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定。
-        // 提示走独立元素（此前写入 _statusText 会被 RefreshStatus 立即覆盖，永远不可见）；
-        // 并直接给一键切换按钮——用户在多分区页改配置保存时，顶层模式极易被遗忘。
         var mismatch = settings.OperatingMode != OperatingMode.MultiZone;
         _modeHintText.Text = mismatch
             ? "当前模式不是多分区（配置不会生效）。点下方按钮一键切换并保存。"
@@ -189,28 +234,12 @@ public sealed class MultiZonePage : UserControl
 
     public void ApplyTo(KeyboardSettings settings)
     {
-        var multi = settings.MultiZone;
-        for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
+        var multi = CaptureCurrent();
+        settings.MultiZone = multi;
+        if (!_loadingPresetCombo)
         {
-            var effect = multi.Zones[zone];
-            effect.Type = _typeCombos[zone].SelectedIndex switch
-            {
-                1 => EffectType.Breathing,
-                2 => EffectType.Rainbow,
-                3 => EffectType.Sequence,
-                4 => EffectType.Pulse,
-                5 => EffectType.Heartbeat,
-                6 => EffectType.Off,
-                _ => EffectType.Static,
-            };
-            if (_zoneColors[zone] is { Length: > 0 } color)
-            {
-                effect.Color = color;
-            }
+            RefreshPresetCombo(multi);
         }
-        multi.IncludeLightbar = _lightbarCheck.IsChecked == true;
-        multi.Layout = _layoutSingle.IsChecked == true ? MultiZoneLayout.SingleMerged : MultiZoneLayout.Zones3;
-        settings.MultiZone = multi.Normalize();
     }
 
     public void ResetDirty() => _dirty = false;
@@ -218,10 +247,154 @@ public sealed class MultiZonePage : UserControl
     public bool IsDirty => _loading ? false : _dirty;
     private bool _dirty;
 
-    /// <summary>
-    /// 状态行刷新：读服务端 multizone-status（优先 IPC，其次文件）。读取在后台线程执行、
-    /// 结果经 Dispatcher 回 UI——此前每秒在 UI 线程同步 IPC（最长数百 ms），是卡顿源。
-    /// </summary>
+    private static int ZoneTypeToIndex(EffectType type) => type switch
+    {
+        EffectType.Breathing => 1,
+        EffectType.Rainbow => 2,
+        EffectType.Sequence => 3,
+        EffectType.Pulse => 4,
+        EffectType.Heartbeat => 5,
+        EffectType.RelayFlow => 6,
+        EffectType.AmbientGradient => 7,
+        EffectType.Off => 8,
+        _ => 0,
+    };
+
+    private static EffectType ZoneIndexToType(int index) => index switch
+    {
+        1 => EffectType.Breathing,
+        2 => EffectType.Rainbow,
+        3 => EffectType.Sequence,
+        4 => EffectType.Pulse,
+        5 => EffectType.Heartbeat,
+        6 => EffectType.RelayFlow,
+        7 => EffectType.AmbientGradient,
+        8 => EffectType.Off,
+        _ => EffectType.Static,
+    };
+
+    // ---- 预设 ----
+
+    private void RefreshPresetCombo(MultiZoneSettings multi)
+    {
+        _loadingPresetCombo = true;
+        try
+        {
+            var names = multi.Presets.Select(preset => preset.Name).ToList();
+            _presetCombo.ItemsSource = names;
+            _presetCombo.SelectedIndex = names.Count == 0 ? -1 : 0;
+        }
+        finally
+        {
+            _loadingPresetCombo = false;
+        }
+    }
+
+    private void SavePreset()
+    {
+        if (_loading) return;
+        var name = _presetNameBox.Text.Trim();
+        if (name.Length == 0)
+        {
+            System.Windows.MessageBox.Show("请先在文本框输入预设名称。", "多分区预设",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var multi = CaptureCurrent();
+        var presets = multi.Presets.ToList();
+        presets.RemoveAll(preset => string.Equals(preset.Name, name, StringComparison.OrdinalIgnoreCase)); // 同名覆盖
+        presets.Add(multi.CapturePreset(name));
+        multi.Presets = presets.Take(MultiZoneSettings.MaxPresets).ToList();
+        _working = multi.Normalize();
+        _presetNameBox.Text = "";
+        RefreshPresetCombo(_working);
+        MarkDirty();
+    }
+
+    private void ApplySelectedPreset()
+    {
+        if (_loading) return;
+        if (_presetCombo.SelectedItem is not string name)
+        {
+            System.Windows.MessageBox.Show("请先选择一个预设。", "多分区预设",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var multi = CaptureCurrent();
+        var preset = multi.Presets.FirstOrDefault(p =>
+            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (preset is null) return;
+
+        multi.ApplyPreset(preset);
+        _working = multi;
+        _loading = true;
+        try
+        {
+            for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
+            {
+                _typeCombos[zone].SelectedIndex = ZoneTypeToIndex(multi.Zones[zone].Type);
+                _zoneColors[zone] = multi.Zones[zone].Color;
+                _colorChips[zone].Background = new SolidColorBrush(
+                    (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
+                _periodSliders[zone].Value = multi.Zones[zone].PeriodMs;
+                _minimumSliders[zone].Value = multi.Zones[zone].MinimumBrightness;
+                UpdateZoneControls(zone);
+            }
+
+            _lightbarCheck.IsChecked = multi.IncludeLightbar;
+            _layoutZones.IsChecked = multi.Layout != MultiZoneLayout.SingleMerged;
+            _layoutSingle.IsChecked = multi.Layout == MultiZoneLayout.SingleMerged;
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        UpdateLayoutVisibility();
+        MarkDirty();
+    }
+
+    private void DeleteSelectedPreset()
+    {
+        if (_loading || _presetCombo.SelectedItem is not string name) return;
+        var multi = CaptureCurrent();
+        var preset = multi.Presets.FirstOrDefault(p =>
+            string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (preset is null) return;
+
+        multi.Presets.Remove(preset);
+        _working = multi.Normalize();
+        RefreshPresetCombo(_working);
+        MarkDirty();
+    }
+
+    /// <summary>当前页面状态打包（含预设列表）。</summary>
+    private MultiZoneSettings CaptureCurrent()
+    {
+        var multi = _working;
+        multi.Layout = _layoutSingle.IsChecked == true ? MultiZoneLayout.SingleMerged : MultiZoneLayout.Zones3;
+        multi.IncludeLightbar = _lightbarCheck.IsChecked == true;
+        for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
+        {
+            var effect = multi.Zones[zone];
+            effect.Type = ZoneIndexToType(_typeCombos[zone].SelectedIndex);
+            if (_zoneColors[zone] is { Length: > 0 } color)
+            {
+                effect.Color = color;
+            }
+
+            effect.PeriodMs = (int)_periodSliders[zone].Value;
+            effect.MinimumBrightness = (int)_minimumSliders[zone].Value;
+        }
+
+        return multi.Normalize();
+    }
+
+    // ---- 状态与交互 ----
+
+    /// <summary>状态行刷新：后台线程读取，Dispatcher 回 UI。</summary>
     public void RefreshStatus()
     {
         if (_statusRefreshInFlight)
@@ -254,6 +427,33 @@ public sealed class MultiZonePage : UserControl
                     : "能力位未命中：三区布局不可用并已回退普通灯效管线（单区合并布局不受影响）。";
     }
 
+    private void OpenColorPicker(int zone)
+    {
+        if (_loading) return;
+        var current = _zoneColors[zone] ?? "#FF0000";
+        var dialog = new ColorSelectionDialog([current], singleSelection: true)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        if (dialog.ShowDialog() == true && dialog.SelectedColors is { Count: > 0 } picked)
+        {
+            ApplySwatch(zone, picked[0]);
+        }
+    }
+
+    private void ApplySwatch(int zone, string colorHex)
+    {
+        _zoneColors[zone] = colorHex;
+        _colorChips[zone].Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex));
+        if (_typeCombos[zone].SelectedIndex == 8)
+        {
+            _typeCombos[zone].SelectedIndex = 0; // 选色隐含“从关闭切到固定颜色”
+        }
+
+        UpdateZoneControls(zone);
+        MarkDirty();
+    }
+
     private void OnLayoutChanged()
     {
         if (_loading) return;
@@ -269,38 +469,31 @@ public sealed class MultiZonePage : UserControl
         _zoneCards[3].Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         _lightbarSection.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         _layoutHint.Text = single
-            ? "整块键盘按『左分区』的配置渲染（与灯效模式相同的单区路径：无闪色、亮度为软件缩放，适合单分区机型）。其余分区的配置保留，切回三区布局后恢复生效。"
+            ? "整块键盘按『左分区』的配置渲染（与灯效模式相同的单区路径，适合单分区机型）。其余分区配置保留，切回三区布局后恢复生效。"
             : "左/中/右/灯带按区独立渲染（面向真三区机型；亮度经 0xF4 硬件亮度）。";
-    }
-
-    private void ApplySwatch(int zone, string colorHex)
-    {
-        _zoneColors[zone] = colorHex;
-        _colorChips[zone].Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex));
-        if (_typeCombos[zone].SelectedIndex == 6)
-        {
-            _typeCombos[zone].SelectedIndex = 0; // 选色隐含“从关闭切到固定颜色”
-        }
-        UpdateZoneControls(zone);
-        MarkDirty();
     }
 
     private void UpdateZoneControls(int zone)
     {
         var index = _typeCombos[zone].SelectedIndex;
-        var isOff = index == 6;
+        var isOff = index == 8;
         var usesSequence = index is 2 or 3 or 4 or 5; // 循环类：颜色由序列决定
         _swatchRows[zone].IsEnabled = !isOff && !usesSequence;
         _colorChips[zone].IsEnabled = !isOff && !usesSequence;
         _colorChips[zone].Opacity = usesSequence ? 0.35 : 1;
+        var periodVisible = index is 1 or 6 or 7; // 呼吸/接力/渐变有周期语义
+        _periodSliders[zone].Visibility = periodVisible && !isOff ? Visibility.Visible : Visibility.Collapsed;
+        _minimumSliders[zone].Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed; // 仅单色呼吸
         _zoneHints[zone].Text = index switch
         {
-            1 => "以本区颜色呼吸（周期为默认值 3000 ms）。",
+            1 => "以本区颜色呼吸；周期与最低亮度可调。",
             2 => "全彩循环（默认六色序列），与基色无关。",
             3 => "循环呼吸（默认六色序列，带呼吸过渡）。",
-            4 => "脉冲（默认六色序列，2000 ms 周期）。",
-            5 => "心跳（默认六色序列，1500 ms 周期）。",
-            6 => "本区关闭（黑）。",
+            4 => "脉冲（默认六色序列）。",
+            5 => "心跳（默认六色序列）。",
+            6 => "接力流动：四区共享色相时间轴，左→中→右依次推进，灯带补色（单分区硬件上表现为色相摆动）。基色=色相锚点。",
+            7 => "氛围渐变：左=基色、右=辅助色（序列首色，缺省取补色）、中间插值，缓慢呼吸；灯带取中间色。",
+            8 => "本区关闭（黑）。",
             _ => "本区常亮所选颜色。",
         };
     }
@@ -312,7 +505,7 @@ public sealed class MultiZonePage : UserControl
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    // ---- 控件工厂（对齐 MusicPage 的风格）----
+    // ---- 控件工厂 ----
 
     private static Border MakeCard(string title, params UIElement[] children)
     {
@@ -356,14 +549,6 @@ public sealed class MultiZonePage : UserControl
         return row;
     }
 
-    private static ComboBox MakeCombo(string[] items) => new()
-    {
-        ItemsSource = items,
-        Width = 150,
-        Height = 28,
-        SelectedIndex = 0,
-    };
-
     private static System.Windows.Controls.RadioButton MakeRadio(string text) => new()
     {
         Content = text,
@@ -371,19 +556,18 @@ public sealed class MultiZonePage : UserControl
         VerticalContentAlignment = VerticalAlignment.Center,
     };
 
-    private static Button MakeButton(string text) => new()
-    {
-        Content = text,
-        MinWidth = 200,
-        Height = 32,
-        Margin = new Thickness(0, 6, 0, 0),
-    };
-
     private static CheckBox MakeCheckBox(string text) => new()
     {
         Content = text,
         VerticalContentAlignment = VerticalAlignment.Center,
         Margin = new Thickness(0, 2, 0, 2),
+    };
+
+    private static Button MakeButton(string text, double minWidth = 112) => new()
+    {
+        Content = text,
+        MinWidth = minWidth,
+        Height = 30,
     };
 
     private static TextBlock MakeHint() => new()

@@ -102,9 +102,11 @@ public sealed class KeyboardSettings
             Effect.Type = EffectType.Static;
             OperatingMode = OperatingMode.Music;
         }
-        else if (!Enum.IsDefined(Effect.Type))
+        else if (!Enum.IsDefined(Effect.Type) || IsMultiZoneOnlyEffect(Effect.Type))
         {
             // 其他未知值（未来扩展或被破坏的数据）仅静默回退灯效，不动 OperatingMode。
+            // 多分区专属协同效果（RelayFlow/AmbientGradient）只属于 MultiZone.Zones 的存储——
+            // 出现在顶层 Effect 时（手改 JSON 等）同样收敛为 Static，灯效管线零泄漏。
             Effect.Type = EffectType.Static;
         }
 
@@ -290,7 +292,14 @@ public sealed class KeyboardSettings
             {
                 Layout = MultiZone.Layout,
                 IncludeLightbar = MultiZone.IncludeLightbar,
-                Zones = MultiZone.Zones.Select(CloneEffect).ToList()
+                Zones = MultiZone.Zones.Select(CloneEffect).ToList(),
+                Presets = MultiZone.Presets.Select(preset => new MultiZonePreset
+                {
+                    Name = preset.Name,
+                    Layout = preset.Layout,
+                    IncludeLightbar = preset.IncludeLightbar,
+                    Zones = preset.Zones.Select(CloneEffect).ToList()
+                }).ToList()
             },
             OutputBrightnessLimit = OutputBrightnessLimit,
             SelectedAudioProcessName = SelectedAudioProcessName,
@@ -322,6 +331,10 @@ public sealed class KeyboardSettings
             }
         }.Normalize();
     }
+
+    /// <summary>多分区专属协同效果值（RelayFlow/AmbientGradient）：普通灯效管线不消费，仅 MultiZone 渲染。</summary>
+    public static bool IsMultiZoneOnlyEffect(EffectType type) =>
+        type is EffectType.RelayFlow or EffectType.AmbientGradient;
 
     public static LightingEffectSettings CloneEffect(LightingEffectSettings effect)
     {

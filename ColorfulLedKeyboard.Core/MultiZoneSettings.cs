@@ -57,6 +57,14 @@ public sealed class MultiZoneSettings
             Zones.RemoveRange(ZoneCount, Zones.Count - ZoneCount);
         }
 
+        Presets = (Presets ?? [])
+            .Select(preset => preset.Normalize())
+            .Where(preset => !string.IsNullOrWhiteSpace(preset.Name))
+            .GroupBy(preset => preset.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())
+            .Take(MaxPresets)
+            .ToList();
+
         if (!Enum.IsDefined(Layout))
         {
             Layout = MultiZoneLayout.Zones3;
@@ -65,8 +73,10 @@ public sealed class MultiZoneSettings
         for (var zone = 0; zone < ZoneCount; zone++)
         {
             var effect = Zones[zone] ?? CreateDefaultZone(zone);
-            if (!Enum.IsDefined(effect.Type))
+            if (!Enum.IsDefined(effect.Type) ||
+                (KeyboardSettings.IsMultiZoneOnlyEffect(effect.Type) && zone == 3))
             {
+                // 灯带不参与协同效果（其呈现由三区协同生成器决定）；未知值回固定颜色
                 effect.Type = EffectType.Static;
             }
 
@@ -78,6 +88,29 @@ public sealed class MultiZoneSettings
     }
 
     /// <summary>出厂默认：三区基色（红/绿/蓝）+ 青色灯带，一开机就能看出分区差异。</summary>
+    /// <summary>整套多分区配置的命名预设（四区灯效 + 布局 + 灯带开关）。最多 8 个。</summary>
+    public List<MultiZonePreset> Presets { get; set; } = [];
+
+    public const int MaxPresets = 8;
+
+    /// <summary>把当前整套配置打包为预设。</summary>
+    public MultiZonePreset CapturePreset(string name) => new()
+    {
+        Name = name,
+        Layout = Layout,
+        IncludeLightbar = IncludeLightbar,
+        Zones = Zones.Select(KeyboardSettings.CloneEffect).ToList(),
+    };
+
+    /// <summary>应用预设到本配置（深拷贝，避免共享引用）。</summary>
+    public void ApplyPreset(MultiZonePreset preset)
+    {
+        Layout = preset.Layout;
+        IncludeLightbar = preset.IncludeLightbar;
+        Zones = preset.Zones.Select(KeyboardSettings.CloneEffect).ToList();
+        Normalize();
+    }
+
     public static LightingEffectSettings CreateDefaultZone(int zone)
     {
         var effect = EffectPresetSettings.CreateSoftwareDefault(EffectType.Static);
