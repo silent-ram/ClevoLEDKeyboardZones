@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Net.Sockets;
 using System.Windows.Threading;
 using ColorfulLedKeyboard.Core;
 using ColorfulLedKeyboard.Tray.Wpf.Pages;
@@ -328,9 +329,12 @@ public partial class MainWindow : Window
         _musicPage?.RefreshRuntimeStatus(automationStatus);
         _multiZonePage?.RefreshStatus();
         _automationPage?.UpdateStatusText(automationStatus);
-        var serviceStatus = GetServiceStatusText();
+        // 开发栈（fork）判定：分支 IPC 通道可达 = Zones 服务在线（不依赖按安装服务名查 SCM——
+        // 演示期间正式版服务可能被禁用）。生产安装形态下分支通道无监听，走原有服务名判定。
+        var forkServiceOnline = ForkServiceOnline();
+        var serviceStatus = forkServiceOnline ? "运行中（开发服务）" : GetServiceStatusText();
         var driverStatus = GetDriverStatusText();
-        var serviceReady = serviceStatus == "运行中";
+        var serviceReady = serviceStatus.StartsWith("运行中", StringComparison.Ordinal);
         var componentReady = driverStatus.StartsWith("已安装", StringComparison.OrdinalIgnoreCase);
 
         HeaderStatus.Text = serviceReady && componentReady ? "● 服务与灯控正常" : "⚠ 需要检查运行状态";
@@ -374,6 +378,20 @@ public partial class MainWindow : Window
         var events = $"{typing} · {notification}{(fresh && status!.IdleOverrideActive ? " · 空闲覆盖中" : "")}";
 
         overview.SetRuntime(mode, brightness, brightnessHint, rule, player, events);
+    }
+
+    private static bool ForkServiceOnline()
+    {
+        // 250ms 内连上分支 IPC 端口即在线；这个探测本就每秒一次、连接立即失败零开销
+        try
+        {
+            using var client = new TcpClient();
+            return client.ConnectAsync(System.Net.IPAddress.Loopback, ServiceIpc.ForkIpcPort).Wait(250);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string GetServiceStatusText()
