@@ -41,6 +41,7 @@ public sealed class MultiZonePage : UserControl
     private readonly StackPanel[] _swatchRows = new StackPanel[MultiZoneSettings.ZoneCount];
     private readonly TextBlock[] _zoneHints = new TextBlock[MultiZoneSettings.ZoneCount];
     private readonly Border[] _zoneCards = new Border[MultiZoneSettings.ZoneCount];
+    private readonly UiSequenceEditor[] _sequenceEditors = new UiSequenceEditor[MultiZoneSettings.ZoneCount];
     private readonly UiSliderRow[] _periodSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
     private readonly UiSliderRow[] _minimumSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
 
@@ -126,6 +127,7 @@ public sealed class MultiZonePage : UserControl
             combo.SelectionChanged += (_, _) =>
             {
                 if (_loading) return;
+                PrefillSequenceIfEmpty(zoneIndex);
                 UpdateZoneControls(zoneIndex);
                 MarkDirty();
             };
@@ -173,6 +175,14 @@ public sealed class MultiZonePage : UserControl
 
             _swatchRows[zone] = swatches;
 
+            var sequenceEditor = new UiSequenceEditor();
+            sequenceEditor.ColorsChanged += (_, _) =>
+            {
+                if (_loading) return;
+                MarkDirty();
+            };
+            _sequenceEditors[zone] = sequenceEditor;
+
             _periodSliders[zone] = new UiSliderRow("周期", 300, 30000, " ms");
             _minimumSliders[zone] = new UiSliderRow("最低亮度", 0, 100, "%");
             _periodSliders[zone].ValueChanged += (_, _) => MarkDirty();
@@ -182,7 +192,7 @@ public sealed class MultiZonePage : UserControl
             _zoneHints[zone] = hint;
             var card = MakeCard(MultiZoneSettings.ZoneName(zone),
                 Row("效果", combo), Row("颜色", chip, pickButton, swatches),
-                _periodSliders[zone], _minimumSliders[zone], hint);
+                sequenceEditor, _periodSliders[zone], _minimumSliders[zone], hint);
             _zoneCards[zone] = card;
             stack.Children.Add(card);
         }
@@ -212,6 +222,7 @@ public sealed class MultiZonePage : UserControl
                 _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
+                _sequenceEditors[zone].Colors = multi.Zones[zone].Sequence.Select(item => item.Color).ToList();
                 _periodSliders[zone].Value = multi.Zones[zone].PeriodMs;
                 _minimumSliders[zone].Value = multi.Zones[zone].MinimumBrightness;
                 UpdateZoneControls(zone);
@@ -340,6 +351,7 @@ public sealed class MultiZonePage : UserControl
                 _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
+                _sequenceEditors[zone].Colors = multi.Zones[zone].Sequence.Select(item => item.Color).ToList();
                 _periodSliders[zone].Value = multi.Zones[zone].PeriodMs;
                 _minimumSliders[zone].Value = multi.Zones[zone].MinimumBrightness;
                 UpdateZoneControls(zone);
@@ -385,6 +397,22 @@ public sealed class MultiZonePage : UserControl
             if (_zoneColors[zone] is { Length: > 0 } color)
             {
                 effect.Color = color;
+            }
+
+            // 循环类与渐变：颜色列表写回序列（HoldMs=周期滑条，循环呼吸带呼吸过渡）
+            var type = effect.Type;
+            if (type is EffectType.Rainbow or EffectType.Sequence or EffectType.Pulse
+                or EffectType.Heartbeat or EffectType.AmbientGradient)
+            {
+                var breathing = type == EffectType.Sequence;
+                effect.CustomSequenceColorsEnabled = type == EffectType.Rainbow;
+                effect.Sequence = _sequenceEditors[zone].Colors.Select(color => new SequenceColor
+                {
+                    Color = color,
+                    HoldMs = (int)_periodSliders[zone].Value,
+                    TransitionMs = 0,
+                    Breathing = breathing,
+                }).ToList();
             }
 
             effect.PeriodMs = (int)_periodSliders[zone].Value;
@@ -475,26 +503,50 @@ public sealed class MultiZonePage : UserControl
             : "左/中/右/灯带按区独立渲染（面向真三区机型；亮度经 0xF4 硬件亮度）。";
     }
 
+    /// <summary>切到颜色列表驱动的效果时，若该区序列为空则预填充默认序列。</summary>
+    private void PrefillSequenceIfEmpty(int zone)
+    {
+        if (_sequenceEditors[zone].Colors.Count > 0) return;
+        var type = ZoneIndexToType(_typeCombos[zone].SelectedIndex);
+        switch (type)
+        {
+            case EffectType.Rainbow:
+            case EffectType.Sequence:
+            case EffectType.Pulse:
+            case EffectType.Heartbeat:
+                _sequenceEditors[zone].Colors = EffectPresetSettings
+                    .CreateSoftwareDefault(type).Sequence.Select(item => item.Color).ToList();
+                break;
+            case EffectType.AmbientGradient:
+                var baseColor = RgbColor.FromHex(_zoneColors[zone] ?? "#FF0000");
+                var complement = RgbColor.FromHsv((MultiZoneCooperativeEffects.HueOf(baseColor) + 180) % 360, 1, 1);
+                _sequenceEditors[zone].Colors = [baseColor.Hex, complement.Hex];
+                break;
+        }
+    }
+
     private void UpdateZoneControls(int zone)
     {
         var index = _typeCombos[zone].SelectedIndex;
         var isOff = index == 8;
-        var usesSequence = index is 2 or 3 or 4 or 5; // 循环类：颜色由序列决定
+        var usesList = index is 2 or 3 or 4 or 5 or 7; // 颜色列表驱动
+        var usesSequence = index is 2 or 3 or 4 or 5; // 循环类：基色被序列取代
         _swatchRows[zone].IsEnabled = !isOff && !usesSequence;
         _colorChips[zone].IsEnabled = !isOff && !usesSequence;
         _colorChips[zone].Opacity = usesSequence ? 0.35 : 1;
-        var periodVisible = index is 1 or 6 or 7; // 呼吸/接力/渐变有周期语义
+        _sequenceEditors[zone].Visibility = usesList && !isOff ? Visibility.Visible : Visibility.Collapsed;
+        var periodVisible = index is 1 or 2 or 3 or 4 or 5 or 6 or 7; // 呼吸/循环类/接力/渐变有周期语义
         _periodSliders[zone].Visibility = periodVisible && !isOff ? Visibility.Visible : Visibility.Collapsed;
         _minimumSliders[zone].Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed; // 仅单色呼吸
         _zoneHints[zone].Text = index switch
         {
             1 => "以本区颜色呼吸；周期与最低亮度可调。",
-            2 => "全彩循环（默认六色序列），与基色无关。",
-            3 => "循环呼吸（默认六色序列，带呼吸过渡）。",
-            4 => "脉冲（默认六色序列）。",
-            5 => "心跳（默认六色序列）。",
+            2 => "全彩循环：编辑下方颜色列表自定义循环色。",
+            3 => "循环呼吸：编辑颜色列表，色间带呼吸过渡。",
+            4 => "脉冲：编辑颜色列表，逐色脉冲。",
+            5 => "心跳：编辑颜色列表，逐色心跳。",
             6 => "接力流动：四区共享色相时间轴，左→中→右依次推进，灯带补色（单分区硬件上表现为色相摆动）。基色=色相锚点。",
-            7 => "氛围渐变：左=基色、右=辅助色（序列首色，缺省取补色）、中间插值，缓慢呼吸；灯带取中间色。",
+            7 => "氛围渐变：颜色列表映射到键盘横向（首色=左、末色=右、中间停靠点=中），整体缓慢呼吸。",
             8 => "本区关闭（黑）。",
             _ => "本区常亮所选颜色。",
         };

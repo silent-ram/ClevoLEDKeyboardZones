@@ -20,7 +20,7 @@ public sealed class MultiZoneCooperativeEffectsTests
         Type = EffectType.AmbientGradient,
         Color = "#FF0000",
         PeriodMs = 6000,
-        Sequence = [new SequenceColor { Color = "#0000FF" }], // 冷端蓝
+        Sequence = [new SequenceColor { Color = "#FF0000" }, new SequenceColor { Color = "#0000FF" }], // 左红右蓝
     };
 
     [Fact]
@@ -65,12 +65,27 @@ public sealed class MultiZoneCooperativeEffectsTests
     }
 
     [Fact]
-    public void AmbientGradient_LeftIsBaseColor_RightIsSequenceHead()
+    public void AmbientGradient_LeftIsFirstStop_RightIsLastStop()
     {
-        // 呼吸中点（period/2 处 factor=1）时：左=基色、右=序列首色
+        // 呼吸中点（period/2 处 factor=1）时：左=序列首色、右=序列末色
         var frame = MultiZoneCooperativeEffects.ComputeFrame(Gradient, elapsedMs: 3000, includeLightbar: false);
         Assert.Equal(new RgbColor(255, 0, 0), frame[0]!.Value);
         Assert.Equal(new RgbColor(0, 0, 255), frame[2]!.Value);
+    }
+
+    [Fact]
+    public void AmbientGradient_SingleStop_AppliesEverywhere()
+    {
+        var effect = new LightingEffectSettings
+        {
+            Type = EffectType.AmbientGradient,
+            Color = "#FF0000",
+            PeriodMs = 6000,
+            Sequence = [new SequenceColor { Color = "#00FF00" }],
+        };
+        var frame = MultiZoneCooperativeEffects.ComputeFrame(effect, 3000, includeLightbar: false);
+        Assert.Equal(new RgbColor(0, 255, 0), frame[0]!.Value);
+        Assert.Equal(new RgbColor(0, 255, 0), frame[2]!.Value);
     }
 
     [Fact]

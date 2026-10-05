@@ -25,7 +25,7 @@ public static class MultiZoneCooperativeEffects
                 // 接力流动：同一条色相时间轴，左→中→右依次相位偏移 1/3 周期；
                 // 基色作为色相锚点做全彩循环（锚点色相 = 波形中心），灯带取补色。
                 var period = Math.Clamp(effect.PeriodMs, 300, 30000);
-                var baseHue = ToHue(baseColor);
+                var baseHue = HueOf(baseColor);
                 var phase = elapsedMs % period / (double)period; // 0..1
                 for (var zone = 0; zone < 3; zone++)
                 {
@@ -46,13 +46,40 @@ public static class MultiZoneCooperativeEffects
             }
             case EffectType.AmbientGradient:
             {
-                // 氛围渐变：左=基色（暖端），右=辅助色（冷端，取 Sequence[0]，缺省基色补 180°），
-                // 中=两端中点插值；整体叠加缓慢呼吸（PeriodMs 为呼吸周期，下限与
-                // LightingEffectSettings.Normalize 的 300ms 一致）；灯带取中间色。
+                // 氛围渐变：颜色列表映射到键盘横向——左=首色、右=末色、中间=中间停靠点
+                // （3 色及以上取中间停靠点，2 色取插值，空列表时两端取基色/补色）；
+                // 整体叠加缓慢呼吸（PeriodMs 为呼吸周期，下限与 Normalize 的 300ms 一致）；灯带取中间色。
                 var period = Math.Clamp(effect.PeriodMs, 300, 30000);
-                var left = baseColor;
-                var right = effect.Sequence.Count > 0 ? RgbColor.FromHex(effect.Sequence[0].Color) : RgbColor.FromHsv(ToHue(baseColor) + 180, 1, 1);
-                var middle = RgbColor.Lerp(left, right, 0.5);
+                var stops = effect.Sequence.Count > 0
+                    ? effect.Sequence.Select(item => RgbColor.FromHex(item.Color)).ToList()
+                    : new List<RgbColor>();
+                RgbColor left;
+                RgbColor middle;
+                RgbColor right;
+                switch (stops.Count)
+                {
+                    case 1:
+                        left = stops[0];
+                        right = stops[0];
+                        middle = stops[0];
+                        break;
+                    case 2:
+                        left = stops[0];
+                        right = stops[1];
+                        middle = RgbColor.Lerp(left, right, 0.5);
+                        break;
+                    case >= 3:
+                        left = stops[0];
+                        middle = stops[stops.Count / 2];
+                        right = stops[^1];
+                        break;
+                    default:
+                        left = baseColor;
+                        right = RgbColor.FromHsv(HueOf(baseColor) + 180, 1, 1);
+                        middle = RgbColor.Lerp(left, right, 0.5);
+                        break;
+                }
+
                 var breathe = 0.55 + 0.45 * (0.5 - 0.5 * Math.Cos(elapsedMs % period / (double)period * Math.PI * 2));
                 result[0] = ScaleValue(left, breathe);
                 result[1] = ScaleValue(middle, breathe);
@@ -75,7 +102,8 @@ public static class MultiZoneCooperativeEffects
     public static bool IsCooperative(EffectType type) =>
         type is EffectType.RelayFlow or EffectType.AmbientGradient;
 
-    private static double ToHue(RgbColor color)
+    /// <summary>RGB 颜色的色相（0..360）。</summary>
+    public static double HueOf(RgbColor color)
     {
         var r = color.R / 255d;
         var g = color.G / 255d;
