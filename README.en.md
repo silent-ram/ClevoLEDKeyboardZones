@@ -44,7 +44,7 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
   session peak) and replays the real music pipeline's bound-player beat path — no real keyboard
   needed to observe the response.
 - **External control**: the simulator acts as a virtual keyboard driven by this fork's service
-  over a named pipe (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
+  over TCP loopback 127.0.0.1:47820 (enable with `CLEVO_LED_SIMULATOR_PIPE=1`; zero real EC writes; production
   path unaffected), see
   [`docs/simulator/external-control.md`](docs/simulator/external-control.md).
 - **Multi-zone mode in the app (experimental)**: pick "Multi-zone" on the lighting page, then

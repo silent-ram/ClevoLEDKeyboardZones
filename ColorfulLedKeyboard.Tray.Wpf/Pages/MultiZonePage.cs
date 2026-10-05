@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ColorfulLedKeyboard.Core;
 
 namespace ColorfulLedKeyboard.Tray.Wpf.Pages;
@@ -21,7 +22,10 @@ public sealed class MultiZonePage : UserControl
         "#0000FF", "#FF00FF", "#FFFFFF", "#B0B0B0", "#404040", "#000000"
     ];
 
+    private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly TextBlock _statusText = MakeHint();
+    private readonly TextBlock _modeHintText = MakeHint();
+    private bool _statusRefreshInFlight;
     private readonly System.Windows.Controls.RadioButton _layoutZones = MakeRadio("三区 + 灯带（分区机型）");
     private readonly System.Windows.Controls.RadioButton _layoutSingle = MakeRadio("单区合并（单分区机型）");
     private readonly TextBlock _layoutHint = MakeHint();
@@ -52,7 +56,7 @@ public sealed class MultiZonePage : UserControl
             "以『左分区』配置渲染，走与灯效模式相同的单区路径）。灯带不做机型检测，确认机型具备后再开启。"));
 
         _statusText.Text = "服务端状态：读取中…";
-        stack.Children.Add(MakeCard("服务端状态", _statusText));
+        stack.Children.Add(MakeCard("服务端状态", _statusText, _modeHintText));
 
         var layoutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
         layoutRow.Children.Add(_layoutZones);
@@ -161,11 +165,11 @@ public sealed class MultiZonePage : UserControl
 
         UpdateLayoutVisibility();
 
-        // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定
-        if (settings.OperatingMode != OperatingMode.MultiZone)
-        {
-            _statusText.Text = "提示：当前模式不是多分区——请先到 灯效设置 页勾选『多分区』再保存，否则这些配置不会生效。";
-        }
+        // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定。
+        // 提示走独立元素（此前写入 _statusText 会被 RefreshStatus 立即覆盖，永远不可见）。
+        _modeHintText.Text = settings.OperatingMode != OperatingMode.MultiZone
+            ? "提示：当前模式不是多分区——请先到 灯效设置 页勾选『多分区』再保存，否则这些配置不会生效。"
+            : "";
 
         RefreshStatus();
     }
@@ -198,10 +202,33 @@ public sealed class MultiZonePage : UserControl
     public bool IsDirty => _loading ? false : _dirty;
     private bool _dirty;
 
-    /// <summary>状态行刷新：读服务端 multizone-status（优先 IPC，其次文件）。</summary>
+    /// <summary>
+    /// 状态行刷新：读服务端 multizone-status（优先 IPC，其次文件）。读取在后台线程执行、
+    /// 结果经 Dispatcher 回 UI——此前每秒在 UI 线程同步 IPC（最长数百 ms），是卡顿源。
+    /// </summary>
     public void RefreshStatus()
     {
-        var status = MultiZoneStatus.Load();
+        if (_statusRefreshInFlight)
+        {
+            return;
+        }
+
+        _statusRefreshInFlight = true;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            MultiZoneStatus? status = null;
+            try { status = MultiZoneStatus.Load(); }
+            catch { }
+            _dispatcher.BeginInvoke(() =>
+            {
+                _statusRefreshInFlight = false;
+                ApplyStatus(status);
+            });
+        });
+    }
+
+    private void ApplyStatus(MultiZoneStatus? status)
+    {
         _statusText.Text = status is null
             ? "尚无服务端状态（服务未运行，或服务版本早于多分区功能）。"
             : status.Active

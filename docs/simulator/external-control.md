@@ -1,7 +1,7 @@
 # 外接控制：主项目软件 → 虚拟键盘模拟器
 
 > 实验功能（experimental fork 限定）。让模拟器充当一块"虚拟键盘"，由本仓库的服务
-> （即主项目的效果管线）经命名管道驱动渲染，全程**零真实 EC 写入**。
+> （即主项目的效果管线）经 TCP 环回（127.0.0.1:47820）驱动渲染，全程**零真实 EC 写入**。
 > 版本约定 3.6.0-zone.1，与主仓库错开。
 
 ## 用法
@@ -28,7 +28,7 @@ dotnet run --project ColorfulLedKeyboard.Service
 ## 行为与门控
 
 - **服务侧**（`CLEVO_LED_SIMULATOR_PIPE=1` 时）：
-  - `DchuKeyboardDevice.CreateDefault()` 选择 `SimulatorPipeTransport`（命名管道客户端）替代 P/Invoke；
+  - `DchuKeyboardDevice.CreateDefault()` 选择 `SimulatorPipeTransport`（TCP 环回客户端）替代 P/Invoke；
   - `Worker.RenderFrame` 改走分区路径直写：三区（0xF0/0xF1/0xF2）+ 灯带（0xF3）同色。
     分区 API 的能力位探测门（`Has3ZoneKeyboard`）在此分支**不生效**——模拟器按当前视图
     如实应答 0x52 探测（单区视图答"不支持"），探测门会把演示挡死；环境变量本身就是门控。

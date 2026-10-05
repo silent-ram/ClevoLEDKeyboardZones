@@ -18,6 +18,7 @@ public class Worker : BackgroundService
     private bool _multiZoneModeApplied;
     private byte _multiZoneBrightnessLevel;
     private bool _multiZoneActive;
+    private bool _multiZoneHardwareBrightness;
     private OperatingMode _lastLoggedMode = (OperatingMode)(-1);
     private readonly AudioSourceProvider _audioSource;
     private readonly SystemAudioLevelMeter _audioLevelMeter;
@@ -213,6 +214,7 @@ public class Worker : BackgroundService
         }
 
         _multiZoneActive = true;
+        _multiZoneHardwareBrightness = true; // 三区布局：亮度走 0xF4，退出时需恢复满档
         new MultiZoneStatus { CapabilityDetected = true, Active = true }.Save();
         try
         {
@@ -307,6 +309,7 @@ public class Worker : BackgroundService
     private async Task RunMultiZoneSingleMergedAsync(KeyboardSettings settings, MultiZoneSettings multi, CancellationToken stoppingToken)
     {
         _multiZoneActive = true;
+        _multiZoneHardwareBrightness = false; // 单区合并：亮度为软件缩放，退出无需 0xF4（零新增操作码）
         new MultiZoneStatus { CapabilityDetected = _device.Has3ZoneKeyboard, Active = true }.Save();
         try
         {
@@ -362,7 +365,13 @@ public class Worker : BackgroundService
     /// <summary>离开多分区（切模式/关闭）：恢复 EC 亮度满档（单区管线按"软件缩放 + EC 满亮度"假设工作），清空跨重入状态。</summary>
     private void LeaveMultiZoneState()
     {
-        try { _device.SetZoneBrightness(255); } catch (NotSupportedException) { }
+        if (_multiZoneHardwareBrightness)
+        {
+            // 仅三区布局发过 0xF4：恢复 EC 亮度满档（单区管线按"软件缩放 + EC 满亮度"假设工作）。
+            // 单区合并布局从未发过 0xF4，退出时也不发——保持"零新增操作码"承诺。
+            try { _device.SetZoneBrightness(255); } catch (NotSupportedException) { }
+        }
+
         _multiZoneActive = false;
         _multiZoneModeApplied = false;
         _multiZoneBrightnessLevel = 0;

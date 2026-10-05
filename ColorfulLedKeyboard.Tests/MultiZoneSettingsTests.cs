@@ -87,6 +87,31 @@ public sealed class MultiZoneSettingsTests
     }
 
     [Fact]
+    public void SettingsPathRedirect_SavesLocally_NeverThroughProductionIpc()
+    {
+        // 隔离泄漏回归测试：重定向激活时保存必须直写隔离文件（LOCALAPPDATA 可写），
+        // 绝不回退生产 IPC 管道（否则 MultiZone 设置会被生产服务判损坏并回滚）
+        var tempDir = Path.Combine(Path.GetTempPath(), "ClevoLEDSimTest-" + Guid.NewGuid().ToString("N"));
+        var tempSettings = Path.Combine(tempDir, "settings.json");
+        Environment.SetEnvironmentVariable(AppPaths.SettingsPathEnvironmentVariable, tempSettings);
+        try
+        {
+            var store = new SettingsStore();
+            store.Save(new KeyboardSettings { OperatingMode = OperatingMode.MultiZone });
+
+            Assert.True(File.Exists(tempSettings), "redirected save should write the isolated file");
+            var loaded = store.Load();
+            Assert.Equal(OperatingMode.MultiZone, loaded.OperatingMode);
+            Assert.Equal(Path.Combine(tempDir, "multizone-status.json"), AppPaths.MultiZoneStatusPath);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(AppPaths.SettingsPathEnvironmentVariable, null);
+            try { Directory.Delete(tempDir, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
     public void Layout_DefaultsToZones3_AndRoundTripsThroughClone()
     {
         var settings = new KeyboardSettings();

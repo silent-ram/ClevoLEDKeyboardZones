@@ -11,7 +11,9 @@ namespace ColorfulLedKeyboard.Service;
 /// （ClevoLEDKeyboardControl.v2）；本服务在 127.0.0.1:<see cref="ServiceIpc.ForkIpcPort"/>
 /// 托管同一套 JSON 信封协议（长度前缀 + JSON，与管道版一致）。原因：本机环境会拦截
 /// "新建 .NET 8 命名管道"的数据流（连接成功但数据滞留不出），TCP 不受影响。
-/// 仅接受环回连接。客户端顺序：TCP 分支通道（本服务）→ 标准命名管道（生产服务），
+/// 仅接受环回连接。安全边界：TCP 无法校验对端进程身份，本机任意进程可连此端口——
+/// 该通道仅面向开发/演示环境（生产服务走标准命名管道 + ACL/会话校验，不受影响）。
+/// 客户端顺序：TCP 分支通道（本服务）→ 标准命名管道（生产服务），
 /// 见 ServiceIpc.TryRequest。
 /// </summary>
 public sealed class ServiceIpcServer : IDisposable
@@ -28,7 +30,18 @@ public sealed class ServiceIpcServer : IDisposable
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
     {
         var listener = new TcpListener(IPAddress.Loopback, ServiceIpc.ForkIpcPort);
-        listener.Start();
+        try
+        {
+            listener.Start();
+        }
+        catch (Exception ex)
+        {
+            // 端口被占等启动失败必须响：此前异常逃逸为未观察任务异常，IPC 静默死亡无日志
+            _logger.LogError(ex, "IPC listener failed to start on TCP 127.0.0.1:{Port} (port held by another process?); IPC disabled for this process",
+                ServiceIpc.ForkIpcPort);
+            return;
+        }
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)

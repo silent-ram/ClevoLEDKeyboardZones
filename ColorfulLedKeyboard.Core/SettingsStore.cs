@@ -385,7 +385,7 @@ public sealed class SettingsStore
     }
 
     private bool IsInteractiveDefaultStore => Environment.UserInteractive &&
-        string.Equals(Path.GetFullPath(SettingsPath), Path.GetFullPath(AppPaths.SettingsPath), StringComparison.OrdinalIgnoreCase);
+        string.Equals(Path.GetFullPath(SettingsPath), Path.GetFullPath(AppPaths.DefaultSettingsPath), StringComparison.OrdinalIgnoreCase);
 
     private KeyboardSettings RecoverCorruptSettings()
     {

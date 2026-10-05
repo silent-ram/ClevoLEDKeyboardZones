@@ -202,7 +202,7 @@ $root = [System.Windows.Automation.AutomationElement]::FromHandle($p.MainWindowH
 $status1 = Get-TextById $root "ExternalStatusText"
 $enabled1 = ([System.Windows.Automation.AutomationElement] (Find-ById $root "StartButton")).Current.IsEnabled
 # 独立 PowerShell 进程充当"服务"角色：连接 → 保活 3 秒 → 断开（零数据传输，规避沙箱管道过滤）
-$clientCode = "`$c = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'ColorfulLedKeyboardZones.Simulator', [System.IO.Pipes.PipeDirection]::InOut); `$c.Connect(5000); Start-Sleep -Seconds 3; `$c.Dispose()"
+$clientCode = "`$c = New-Object System.Net.Sockets.TcpClient; `$c.Connect('127.0.0.1', 47820); Start-Sleep -Seconds 3; `$c.Dispose()"
 $client = Start-Process powershell -ArgumentList "-NoProfile", "-Command", $clientCode -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 1
 $status2 = Get-TextById $root "ExternalStatusText"

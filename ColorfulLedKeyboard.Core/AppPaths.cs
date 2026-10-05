@@ -35,6 +35,11 @@ public static class AppPaths
             ? custom
             : Path.Combine(ProgramDataDirectory, SettingsFileName);
 
+    /// <summary>不受 CLEVO_LED_SETTINGS_PATH 重定向影响的生产默认路径：用于判定"是否默认存储"
+    /// （决定交互式保存走 IPC 还是本地写）。重定向激活时二者不等，保存走本地文件，
+    /// 绝不回退生产 IPC 管道——堵住 MultiZone 设置泄漏进生产 settings.json 的路径。</summary>
+    public static string DefaultSettingsPath => Path.Combine(ProgramDataDirectory, SettingsFileName);
+
     public static string UpdateStatePath => Path.Combine(UserDataDirectory, UpdateStateFileName);
 
     public static string ForegroundAppStatePath => Path.Combine(ProgramDataDirectory, ForegroundAppStateFileName);
@@ -50,7 +55,10 @@ public static class AppPaths
 
     public static string AutomationStatusPath => Path.Combine(ProgramDataDirectory, AutomationStatusFileName);
 
-    public static string MultiZoneStatusPath => Path.Combine(ProgramDataDirectory, MultiZoneStatusFileName);
+    public static string MultiZoneStatusPath =>
+        Environment.GetEnvironmentVariable(SettingsPathEnvironmentVariable) is { Length: > 0 } custom
+            ? Path.Combine(Path.GetDirectoryName(custom)!, MultiZoneStatusFileName)
+            : Path.Combine(ProgramDataDirectory, MultiZoneStatusFileName);
 
 
     public static string MediaPlaybackStatePath => Path.Combine(ProgramDataDirectory, MediaPlaybackStateFileName);
