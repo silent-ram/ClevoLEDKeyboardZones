@@ -2,7 +2,7 @@ namespace ColorfulLedKeyboard.Core;
 
 public sealed class LightingFrameGenerator
 {
-    private readonly LightingEffectSettings _effect;
+    private LightingEffectSettings _effect;
     private readonly int _defaultBrightness;
     private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
 
@@ -20,6 +20,16 @@ public sealed class LightingFrameGenerator
     }
 
     public int IntervalMs => Math.Clamp(_effect.IntervalMs, 20, 500);
+
+    /// <summary>
+    /// 热更新效果参数（如换颜色）而不重置时间轴：多分区页换色时若重建生成器，
+    /// 呼吸相位归零、首帧写到接近黑色，肉眼看到暗闪一下。相位相关字段（周期/最低亮度等）
+    /// 变化时由调用方重建生成器，颜色类变化走本方法保持相位连续。
+    /// </summary>
+    public void UpdateEffect(LightingEffectSettings effect)
+    {
+        _effect = (effect ?? new LightingEffectSettings()).Normalize();
+    }
 
     public RgbColor Next()
     {

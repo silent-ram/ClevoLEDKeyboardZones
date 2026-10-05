@@ -68,6 +68,34 @@ public sealed class WorkerMultiZoneTests
     }
 
     [Fact]
+    public void ZoneGenerator_ColorUpdate_ContinuesBreathingPhase()
+    {
+        // 换色不应重置呼吸相位：重建生成器会让首帧写到接近黑色（暗闪）
+        var generator = new LightingFrameGenerator(new LightingEffectSettings
+        {
+            Type = EffectType.Breathing,
+            Color = "#FF0000",
+            PeriodMs = 3000,
+            MinimumBrightness = 0,
+        });
+
+        var before = generator.NextAtElapsed(100, elapsedMs: 750); // 四分之一周期，波峰爬升中
+        generator.UpdateEffect(new LightingEffectSettings
+        {
+            Type = EffectType.Breathing,
+            Color = "#00FF00",
+            PeriodMs = 3000,
+            MinimumBrightness = 0,
+        });
+        var after = generator.NextAtElapsed(100, elapsedMs: 751);
+
+        Assert.Equal(127, before.R); // 旧颜色（红）在半亮（255×50%）
+        Assert.True(before.G == 0);
+        Assert.Equal(0, after.R); // 新颜色（绿）：R 通道为 0 证明颜色已切换
+        Assert.True(after.G > 100, $"phase should continue (got G={after.G}, near 0 means phase reset)"); // 相位连续：仍在半亮附近
+    }
+
+    [Fact]
     public void ApplyCustomMode_IsGatedLikeZoneCommands()
     {
         var denied = new FakeDchuTransport { Features1Result = FakeDchuTransport.DefaultUnsupportedResult };

@@ -2,7 +2,6 @@ namespace ColorfulLedKeyboard.Service;
 
 using ColorfulLedKeyboard.Core;
 using System.Diagnostics;
-using System.Text.Json;
 using System.Runtime.InteropServices;
 
 public class Worker : BackgroundService
@@ -325,19 +324,33 @@ public class Worker : BackgroundService
         }
     }
 
-    /// <summary>按区取生成器：效果配置未变时复用（呼吸相位连续、该区零重写），变了才重建并强制重写。</summary>
+    /// <summary>
+    /// 按区取生成器：相位签名（类型/周期/最低亮度等，不含颜色）未变时复用并热更新颜色
+    /// （换色不重置呼吸相位——重建会让首帧写到接近黑色，肉眼暗闪一下）；签名变了才重建。
+    /// </summary>
     private LightingFrameGenerator ZoneGenerator(int zone, LightingEffectSettings effect)
     {
-        var signature = JsonSerializer.Serialize(effect);
+        var signature = PhaseSignature(effect);
         if (_multiZoneGenerators[zone] is null || _multiZoneGeneratorSignatures[zone] != signature)
         {
             _multiZoneGenerators[zone] = new LightingFrameGenerator(effect);
             _multiZoneGeneratorSignatures[zone] = signature;
-            _multiZoneLastColors[zone] = null; // 效果变化：下一帧强制重写该区
+            _multiZoneLastColors[zone] = null; // 相位参数变化：下一帧强制重写该区
+        }
+        else
+        {
+            _multiZoneGenerators[zone]!.UpdateEffect(effect);
         }
 
         return _multiZoneGenerators[zone]!;
     }
+
+    private static string PhaseSignature(LightingEffectSettings effect) =>
+        string.Join("|",
+            effect.Type, effect.PeriodMs, effect.MinimumBrightness, effect.HardBlink,
+            effect.Step, effect.IntervalMs, effect.CustomSequenceColorsEnabled,
+            string.Join(";", effect.Sequence.Select(item =>
+                $"{item.Color},{item.HoldMs},{item.TransitionMs},{item.Breathing}")));
 
     /// <summary>离开多分区（切模式/关闭）：恢复 EC 亮度满档（单区管线按"软件缩放 + EC 满亮度"假设工作），清空跨重入状态。</summary>
     private void LeaveMultiZoneState()
