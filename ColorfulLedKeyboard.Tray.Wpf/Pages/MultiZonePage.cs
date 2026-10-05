@@ -32,6 +32,10 @@ public sealed class MultiZonePage : UserControl
 
     private bool _loading;
 
+    // 分区颜色的唯一数据源（6 位 #RRGGBB 字符串）。WPF Color.ToString() 输出 8 位
+    // #AARRGGBB，经 NormalizeHex 会静默回退成红色——画刷只做显示，绝不作为保存来源。
+    private readonly string?[] _zoneColors = new string?[MultiZoneSettings.ZoneCount];
+
     public event EventHandler? Changed;
 
     public MultiZonePage()
@@ -128,8 +132,7 @@ public sealed class MultiZonePage : UserControl
                     EffectType.Off => 3,
                     _ => 0,
                 };
-                // 把已存颜色画到指示块（此前缺失：ApplyTo 从指示块读色，未初始化时
-                // 色板按钮点击虽然改了背景，但页面重建/回退后 ApplyTo 把默认红写回去）
+                _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
                 UpdateZoneControls(zone);
@@ -163,9 +166,9 @@ public sealed class MultiZonePage : UserControl
                 3 => EffectType.Off,
                 _ => EffectType.Static,
             };
-            if (_colorChips[zone].Background is SolidColorBrush brush)
+            if (_zoneColors[zone] is { Length: > 0 } color)
             {
-                effect.Color = brush.Color.ToString();
+                effect.Color = color;
             }
         }
         multi.IncludeLightbar = _lightbarCheck.IsChecked == true;
@@ -192,6 +195,7 @@ public sealed class MultiZonePage : UserControl
 
     private void ApplySwatch(int zone, string colorHex)
     {
+        _zoneColors[zone] = colorHex;
         _colorChips[zone].Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex));
         if (_typeCombos[zone].SelectedIndex == 3)
         {
