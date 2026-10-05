@@ -47,8 +47,9 @@ public static class MultiZoneCooperativeEffects
             case EffectType.AmbientGradient:
             {
                 // 氛围渐变：左=基色（暖端），右=辅助色（冷端，取 Sequence[0]，缺省基色补 180°），
-                // 中=两端中点插值；整体叠加缓慢呼吸（PeriodMs 为呼吸周期）；灯带取中间色。
-                var period = Math.Clamp(effect.PeriodMs, 1000, 30000);
+                // 中=两端中点插值；整体叠加缓慢呼吸（PeriodMs 为呼吸周期，下限与
+                // LightingEffectSettings.Normalize 的 300ms 一致）；灯带取中间色。
+                var period = Math.Clamp(effect.PeriodMs, 300, 30000);
                 var left = baseColor;
                 var right = effect.Sequence.Count > 0 ? RgbColor.FromHex(effect.Sequence[0].Color) : RgbColor.FromHsv(ToHue(baseColor) + 180, 1, 1);
                 var middle = RgbColor.Lerp(left, right, 0.5);

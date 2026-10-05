@@ -70,14 +70,20 @@ public sealed class MultiZoneSettings
             Layout = MultiZoneLayout.Zones3;
         }
 
+        var cooperativeSeen = false;
         for (var zone = 0; zone < ZoneCount; zone++)
         {
             var effect = Zones[zone] ?? CreateDefaultZone(zone);
+            // 协同效果确定性：只保留第一个协同区（"配在任意区效果一致"），第二处及灯带上的
+            // 协同配置收敛回固定颜色——避免 FirstOrDefault 静默丢弃造成配置不可见
             if (!Enum.IsDefined(effect.Type) ||
-                (KeyboardSettings.IsMultiZoneOnlyEffect(effect.Type) && zone == 3))
+                (KeyboardSettings.IsMultiZoneOnlyEffect(effect.Type) && (zone == 3 || cooperativeSeen)))
             {
-                // 灯带不参与协同效果（其呈现由三区协同生成器决定）；未知值回固定颜色
                 effect.Type = EffectType.Static;
+            }
+            else if (KeyboardSettings.IsMultiZoneOnlyEffect(effect.Type))
+            {
+                cooperativeSeen = true;
             }
 
             effect.Normalize();

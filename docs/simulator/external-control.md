@@ -42,6 +42,9 @@ dotnet run --project ColorfulLedKeyboard.Service
   目录 ACL 限制）并即时生效。
 - **模拟器侧**：TCP 服务端随窗口创建启动；断连自动回到等待，服务端重启自动重连。
 
+> ⚠ 不要把隔离目录的 settings.json 手动拷贝到生产 ProgramData：多分区/协同效果的
+> 枚举字符串是本仓库扩展，旧版解析器无法识别，会判损坏并整体重置配置。
+
 ## 线路协议（UTF-8 按行，TCP 环回 127.0.0.1:47820）
 
 | 方向 | 行 | 含义 |

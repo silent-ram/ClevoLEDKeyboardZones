@@ -43,8 +43,6 @@ public sealed class MultiZonePage : UserControl
     private readonly Border[] _zoneCards = new Border[MultiZoneSettings.ZoneCount];
     private readonly UiSliderRow[] _periodSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
     private readonly UiSliderRow[] _minimumSliders = new UiSliderRow[MultiZoneSettings.ZoneCount];
-    private readonly UIElement[] _periodHosts = new UIElement[MultiZoneSettings.ZoneCount];
-    private readonly UIElement[] _minimumHosts = new UIElement[MultiZoneSettings.ZoneCount];
 
     // 预设栏
     private readonly ComboBox _presetCombo = new() { Width = 200, Height = 28 };
@@ -52,8 +50,6 @@ public sealed class MultiZonePage : UserControl
     private readonly Button _presetSaveButton = MakeButton("保存为预设", 96);
     private readonly Button _presetApplyButton = MakeButton("应用预设", 96);
     private readonly Button _presetDeleteButton = MakeButton("删除预设", 96);
-    private bool _loadingPresetCombo;
-
     private bool _loading;
 
     // 分区颜色的唯一数据源（6 位 #RRGGBB 字符串）。WPF Color.ToString() 输出 8 位
@@ -115,10 +111,18 @@ public sealed class MultiZonePage : UserControl
         stack.Children.Add(_lightbarSection);
 
         // ---- 四区卡片 ----
+        // 灯带（zone3）不参与协同效果——其下拉不含协同项，避免"选了被 Normalize 静默打回"的界面不一致
+        var lightbarTypeLabels = new[] { "固定颜色", "单色呼吸", "RGB 循环", "关闭" };
         for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
         {
             var zoneIndex = zone;
-            var combo = new ComboBox { ItemsSource = TypeLabels, Width = 150, Height = 28, SelectedIndex = 0 };
+            var combo = new ComboBox
+            {
+                ItemsSource = zone == 3 ? lightbarTypeLabels : TypeLabels,
+                Width = 150,
+                Height = 28,
+                SelectedIndex = 0,
+            };
             combo.SelectionChanged += (_, _) =>
             {
                 if (_loading) return;
@@ -171,8 +175,8 @@ public sealed class MultiZonePage : UserControl
 
             _periodSliders[zone] = new UiSliderRow("周期", 300, 30000, " ms");
             _minimumSliders[zone] = new UiSliderRow("最低亮度", 0, 100, "%");
-            _periodHosts[zone] = _periodSliders[zone];
-            _minimumHosts[zone] = _minimumSliders[zone];
+            _periodSliders[zone].ValueChanged += (_, _) => MarkDirty();
+            _minimumSliders[zone].ValueChanged += (_, _) => MarkDirty();
 
             var hint = MakeHint();
             _zoneHints[zone] = hint;
@@ -202,7 +206,9 @@ public sealed class MultiZonePage : UserControl
             _working = multi; // 预设编辑工作副本（ApplyTo 时整体写回）
             for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
             {
-                _typeCombos[zone].SelectedIndex = ZoneTypeToIndex(multi.Zones[zone].Type);
+                _typeCombos[zone].SelectedIndex = zone == 3 && MultiZoneCooperativeEffects.IsCooperative(multi.Zones[zone].Type)
+                    ? 0
+                    : ZoneTypeToIndex(multi.Zones[zone].Type);
                 _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
@@ -236,10 +242,7 @@ public sealed class MultiZonePage : UserControl
     {
         var multi = CaptureCurrent();
         settings.MultiZone = multi;
-        if (!_loadingPresetCombo)
-        {
-            RefreshPresetCombo(multi);
-        }
+        RefreshPresetCombo(multi);
     }
 
     public void ResetDirty() => _dirty = false;
@@ -277,17 +280,9 @@ public sealed class MultiZonePage : UserControl
 
     private void RefreshPresetCombo(MultiZoneSettings multi)
     {
-        _loadingPresetCombo = true;
-        try
-        {
-            var names = multi.Presets.Select(preset => preset.Name).ToList();
-            _presetCombo.ItemsSource = names;
-            _presetCombo.SelectedIndex = names.Count == 0 ? -1 : 0;
-        }
-        finally
-        {
-            _loadingPresetCombo = false;
-        }
+        var names = multi.Presets.Select(preset => preset.Name).ToList();
+        _presetCombo.ItemsSource = names;
+        _presetCombo.SelectedIndex = names.Count == 0 ? -1 : 0;
     }
 
     private void SavePreset()
@@ -304,8 +299,13 @@ public sealed class MultiZonePage : UserControl
         var multi = CaptureCurrent();
         var presets = multi.Presets.ToList();
         presets.RemoveAll(preset => string.Equals(preset.Name, name, StringComparison.OrdinalIgnoreCase)); // 同名覆盖
+        while (presets.Count >= MultiZoneSettings.MaxPresets)
+        {
+            presets.RemoveAt(0); // 满额挤掉最旧，新预设可见（此前 Take(8) 会静默丢掉最新）
+        }
+
         presets.Add(multi.CapturePreset(name));
-        multi.Presets = presets.Take(MultiZoneSettings.MaxPresets).ToList();
+        multi.Presets = presets;
         _working = multi.Normalize();
         _presetNameBox.Text = "";
         RefreshPresetCombo(_working);
@@ -334,7 +334,9 @@ public sealed class MultiZonePage : UserControl
         {
             for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
             {
-                _typeCombos[zone].SelectedIndex = ZoneTypeToIndex(multi.Zones[zone].Type);
+                _typeCombos[zone].SelectedIndex = zone == 3 && MultiZoneCooperativeEffects.IsCooperative(multi.Zones[zone].Type)
+                    ? 0
+                    : ZoneTypeToIndex(multi.Zones[zone].Type);
                 _zoneColors[zone] = multi.Zones[zone].Color;
                 _colorChips[zone].Background = new SolidColorBrush(
                     (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
