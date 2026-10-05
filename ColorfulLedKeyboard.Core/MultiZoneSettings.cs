@@ -1,5 +1,17 @@
 namespace ColorfulLedKeyboard.Core;
 
+/// <summary>多分区渲染布局。</summary>
+public enum MultiZoneLayout
+{
+    /// <summary>三区 + 灯带按区独立渲染（面向真三区机型；服务端按能力位门控，亮度走 0xF4）。</summary>
+    Zones3 = 0,
+
+    /// <summary>单区合并：整块键盘一块灯，仅左分区配置生效，走与灯效模式完全相同的单区路径
+    /// （SetColor 三槽位同色写，单分区用户长期验证过）——无闪色、亮度为软件缩放、零新增操作码，
+    /// 单分区机型友好。</summary>
+    SingleMerged = 1
+}
+
 /// <summary>
 /// 多分区（实验）配置：左/中/右/灯带四个分区各自的灯效 + 灯带下发开关。
 ///
@@ -19,6 +31,9 @@ public sealed class MultiZoneSettings
 
     /// <summary>是否向 zone 3（灯带）下发命令。不做机型检测，由用户自行确认机型支持。</summary>
     public bool IncludeLightbar { get; set; }
+
+    /// <summary>渲染布局：三区独立（真三区机型）或单区合并（单分区机型）。</summary>
+    public MultiZoneLayout Layout { get; set; } = MultiZoneLayout.Zones3;
 
     public static string ZoneName(int zone) => zone switch
     {
@@ -40,6 +55,11 @@ public sealed class MultiZoneSettings
         if (Zones.Count > ZoneCount)
         {
             Zones.RemoveRange(ZoneCount, Zones.Count - ZoneCount);
+        }
+
+        if (!Enum.IsDefined(Layout))
+        {
+            Layout = MultiZoneLayout.Zones3;
         }
 
         for (var zone = 0; zone < ZoneCount; zone++)

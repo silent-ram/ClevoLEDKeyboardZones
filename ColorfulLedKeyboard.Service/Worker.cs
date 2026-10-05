@@ -188,6 +188,13 @@ public class Worker : BackgroundService
     private async Task RunMultiZoneAsync(KeyboardSettings settings, CancellationToken stoppingToken)
     {
         var multi = settings.MultiZone;
+        if (multi.Layout == MultiZoneLayout.SingleMerged)
+        {
+            // 单区合并不需要三区能力位：走与灯效模式相同的单区路径（SetColor），零门控依赖
+            await RunMultiZoneSingleMergedAsync(settings, multi, stoppingToken);
+            return;
+        }
+
         if (!_device.Has3ZoneKeyboard)
         {
             new MultiZoneStatus { CapabilityDetected = false, Active = false }.Save();
@@ -283,6 +290,38 @@ public class Worker : BackgroundService
         finally
         {
             new MultiZoneStatus { CapabilityDetected = true, Active = false }.Save();
+        }
+    }
+
+    /// <summary>
+    /// 单区合并渲染：整块键盘一块灯（单分区机型），仅 左分区 配置生效，走与灯效模式完全相同的
+    /// 单区路径（SetColor 三槽位同色写——单分区用户长期验证过，同色连写无闪色），亮度为软件
+    /// 缩放（该路径已知可用）。不发 CUSTOM/0xF4/0xF3——零新增操作码。
+    /// </summary>
+    private async Task RunMultiZoneSingleMergedAsync(KeyboardSettings settings, MultiZoneSettings multi, CancellationToken stoppingToken)
+    {
+        _multiZoneActive = true;
+        new MultiZoneStatus { CapabilityDetected = _device.Has3ZoneKeyboard, Active = true }.Save();
+        try
+        {
+            var generator = ZoneGenerator(0, multi.Zones[0]);
+            var clock = Stopwatch.StartNew();
+            RgbColor? last = null;
+            while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
+            {
+                var color = generator.NextAtElapsed(settings.Brightness, clock.Elapsed.TotalMilliseconds);
+                if (color != last)
+                {
+                    _device.SetColor(color);
+                    last = color;
+                }
+
+                await Task.Delay(generator.IntervalMs, stoppingToken);
+            }
+        }
+        finally
+        {
+            new MultiZoneStatus { CapabilityDetected = _device.Has3ZoneKeyboard, Active = false }.Save();
         }
     }
 

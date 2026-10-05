@@ -87,6 +87,18 @@ public sealed class MultiZoneSettingsTests
     }
 
     [Fact]
+    public void Layout_DefaultsToZones3_AndRoundTripsThroughClone()
+    {
+        var settings = new KeyboardSettings();
+        settings.Normalize();
+        Assert.Equal(MultiZoneLayout.Zones3, settings.MultiZone.Layout);
+
+        settings.MultiZone.Layout = MultiZoneLayout.SingleMerged;
+        var clone = settings.CloneForRuntime();
+        Assert.Equal(MultiZoneLayout.SingleMerged, clone.MultiZone.Layout);
+    }
+
+    [Fact]
     public void MultiZoneModeValue_RoundTripsThroughSettingsJson()
     {
         // 旧服务（主仓库）读到 OperatingMode=2 会按未知值回退 Lighting（其 Normalize 的

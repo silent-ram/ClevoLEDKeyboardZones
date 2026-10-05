@@ -22,6 +22,10 @@ public sealed class MultiZonePage : UserControl
     ];
 
     private readonly TextBlock _statusText = MakeHint();
+    private readonly System.Windows.Controls.RadioButton _layoutZones = MakeRadio("三区 + 灯带（分区机型）");
+    private readonly System.Windows.Controls.RadioButton _layoutSingle = MakeRadio("单区合并（单分区机型）");
+    private readonly TextBlock _layoutHint = MakeHint();
+    private Border? _lightbarSection;
     private readonly System.Windows.Controls.CheckBox _lightbarCheck = MakeCheckBox("向灯带下发命令（0xF3）");
     private readonly TextBlock _lightbarHint = MakeHint();
     private readonly System.Windows.Controls.ComboBox[] _typeCombos = new ComboBox[MultiZoneSettings.ZoneCount];
@@ -43,15 +47,24 @@ public sealed class MultiZonePage : UserControl
         var stack = new StackPanel { Margin = new Thickness(0, 0, 24, 8) };
 
         stack.Children.Add(MakeHintParagraph(
-            "实验功能：左/中/右三区与灯带各自独立渲染所选灯效。服务端按三区能力位门控，" +
-            "未命中时自动回退普通灯效；能力位命中但物理键盘为单分区时（部分机型如此），三区写入会互相覆盖。" +
-            "灯带不做机型检测，请在确认机型具备灯带后再开启。"));
+            "实验功能。渲染布局二选一：三区 + 灯带（面向真三区机型，按区独立渲染，服务端按能力位门控，" +
+            "能力位命中但物理键盘为单分区时三区写入会互相覆盖）；单区合并（面向单分区机型——整块键盘一块灯，" +
+            "以『左分区』配置渲染，走与灯效模式相同的单区路径）。灯带不做机型检测，确认机型具备后再开启。"));
 
         _statusText.Text = "服务端状态：读取中…";
         stack.Children.Add(MakeCard("服务端状态", _statusText));
 
+        var layoutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
+        layoutRow.Children.Add(_layoutZones);
+        _layoutSingle.Margin = new Thickness(20, 0, 0, 0);
+        layoutRow.Children.Add(_layoutSingle);
+        _layoutZones.Checked += (_, _) => OnLayoutChanged();
+        _layoutSingle.Checked += (_, _) => OnLayoutChanged();
+        stack.Children.Add(MakeCard("渲染布局", layoutRow, _layoutHint));
+
         _lightbarHint.Text = "灯带（zone 3）不参与能力位判定：不检测机型，开启即下发 0xF3；无灯带机型上该命令行为未知。";
-        stack.Children.Add(MakeCard("灯带", _lightbarCheck, _lightbarHint));
+        _lightbarSection = MakeCard("灯带", _lightbarCheck, _lightbarHint);
+        stack.Children.Add(_lightbarSection);
 
         for (var zone = 0; zone < MultiZoneSettings.ZoneCount; zone++)
         {
@@ -138,11 +151,15 @@ public sealed class MultiZonePage : UserControl
                 UpdateZoneControls(zone);
             }
             _lightbarCheck.IsChecked = multi.IncludeLightbar;
+            _layoutZones.IsChecked = multi.Layout != MultiZoneLayout.SingleMerged;
+            _layoutSingle.IsChecked = multi.Layout == MultiZoneLayout.SingleMerged;
         }
         finally
         {
             _loading = false;
         }
+
+        UpdateLayoutVisibility();
 
         // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定
         if (settings.OperatingMode != OperatingMode.MultiZone)
@@ -172,6 +189,7 @@ public sealed class MultiZonePage : UserControl
             }
         }
         multi.IncludeLightbar = _lightbarCheck.IsChecked == true;
+        multi.Layout = _layoutSingle.IsChecked == true ? MultiZoneLayout.SingleMerged : MultiZoneLayout.Zones3;
         settings.MultiZone = multi.Normalize();
     }
 
@@ -187,10 +205,29 @@ public sealed class MultiZonePage : UserControl
         _statusText.Text = status is null
             ? "尚无服务端状态（服务未运行，或服务版本早于多分区功能）。"
             : status.Active
-                ? "多分区渲染运行中（能力位已命中）。"
+                ? "多分区渲染运行中。"
                 : status.CapabilityDetected
                     ? "能力位已命中，但当前未在多分区渲染（未选择多分区模式或已退出）。"
-                    : "能力位未命中：多分区不可用，已自动回退普通灯效管线。";
+                    : "能力位未命中：三区布局不可用并已回退普通灯效管线（单区合并布局不受影响）。";
+    }
+
+    private void OnLayoutChanged()
+    {
+        if (_loading) return;
+        UpdateLayoutVisibility();
+        MarkDirty();
+    }
+
+    private void UpdateLayoutVisibility()
+    {
+        var single = _layoutSingle.IsChecked == true;
+        _zoneCards[1].Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        _zoneCards[2].Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        _zoneCards[3].Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        _lightbarSection.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        _layoutHint.Text = single
+            ? "整块键盘按『左分区』的配置渲染（与灯效模式相同的单区路径：无闪色、亮度为软件缩放，适合单分区机型）。其余分区的配置保留，切回三区布局后恢复生效。"
+            : "左/中/右/灯带按区独立渲染（面向真三区机型；亮度经 0xF4 硬件亮度）。";
     }
 
     private void ApplySwatch(int zone, string colorHex)
@@ -278,6 +315,13 @@ public sealed class MultiZonePage : UserControl
         Width = 150,
         Height = 28,
         SelectedIndex = 0,
+    };
+
+    private static System.Windows.Controls.RadioButton MakeRadio(string text) => new()
+    {
+        Content = text,
+        GroupName = "MultiZoneLayout",
+        VerticalContentAlignment = VerticalAlignment.Center,
     };
 
     private static CheckBox MakeCheckBox(string text) => new()

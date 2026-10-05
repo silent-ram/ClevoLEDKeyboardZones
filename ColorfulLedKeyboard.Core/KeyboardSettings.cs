@@ -288,6 +288,7 @@ public sealed class KeyboardSettings
             },
             MultiZone = new MultiZoneSettings
             {
+                Layout = MultiZone.Layout,
                 IncludeLightbar = MultiZone.IncludeLightbar,
                 Zones = MultiZone.Zones.Select(CloneEffect).ToList()
             },
