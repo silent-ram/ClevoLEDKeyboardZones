@@ -40,20 +40,31 @@ public static class AppPaths
     /// 绝不回退生产 IPC 管道——堵住 MultiZone 设置泄漏进生产 settings.json 的路径。</summary>
     public static string DefaultSettingsPath => Path.Combine(ProgramDataDirectory, SettingsFileName);
 
+    /// <summary>
+    /// 状态文件目录：重定向激活时与隔离设置同目录（LOCALAPPDATA，当前用户可写），
+    /// 否则 ProgramData。隔离的原因不止是配置解耦：ProgramData 里由生产服务（SYSTEM）创建的
+    /// 状态文件，提权的管理员进程也无权覆盖（ACL 只给创建者写权限）——演示栈共用同名状态文件
+    /// 会全部写入失败（UnauthorizedAccessException），打字脉冲/音频/前台等状态全部陈旧。
+    /// </summary>
+    public static string StateDirectory =>
+        Environment.GetEnvironmentVariable(SettingsPathEnvironmentVariable) is { Length: > 0 } custom
+            ? Path.GetDirectoryName(custom)!
+            : ProgramDataDirectory;
+
     public static string UpdateStatePath => Path.Combine(UserDataDirectory, UpdateStateFileName);
 
-    public static string ForegroundAppStatePath => Path.Combine(ProgramDataDirectory, ForegroundAppStateFileName);
+    public static string ForegroundAppStatePath => Path.Combine(StateDirectory, ForegroundAppStateFileName);
 
-    public static string TypingPulseStatePath => Path.Combine(ProgramDataDirectory, TypingPulseStateFileName);
+    public static string TypingPulseStatePath => Path.Combine(StateDirectory, TypingPulseStateFileName);
 
-    public static string NotificationFlashStatePath => Path.Combine(ProgramDataDirectory, NotificationFlashStateFileName);
+    public static string NotificationFlashStatePath => Path.Combine(StateDirectory, NotificationFlashStateFileName);
 
 
     public static string DriverComponentStatePath => Path.Combine(ProgramDataDirectory, DriverComponentStateFileName);
 
-    public static string AudioSourceStatusPath => Path.Combine(ProgramDataDirectory, AudioSourceStatusFileName);
+    public static string AudioSourceStatusPath => Path.Combine(StateDirectory, AudioSourceStatusFileName);
 
-    public static string AutomationStatusPath => Path.Combine(ProgramDataDirectory, AutomationStatusFileName);
+    public static string AutomationStatusPath => Path.Combine(StateDirectory, AutomationStatusFileName);
 
     public static string MultiZoneStatusPath =>
         Environment.GetEnvironmentVariable(SettingsPathEnvironmentVariable) is { Length: > 0 } custom
@@ -61,10 +72,10 @@ public static class AppPaths
             : Path.Combine(ProgramDataDirectory, MultiZoneStatusFileName);
 
 
-    public static string MediaPlaybackStatePath => Path.Combine(ProgramDataDirectory, MediaPlaybackStateFileName);
+    public static string MediaPlaybackStatePath => Path.Combine(StateDirectory, MediaPlaybackStateFileName);
 
-    public static string AudioApplicationsStatePath => Path.Combine(ProgramDataDirectory, AudioApplicationsStateFileName);
-    public static string SettingsRecoveryStatePath => Path.Combine(ProgramDataDirectory, SettingsRecoveryStateFileName);
+    public static string AudioApplicationsStatePath => Path.Combine(StateDirectory, AudioApplicationsStateFileName);
+    public static string SettingsRecoveryStatePath => Path.Combine(StateDirectory, SettingsRecoveryStateFileName);
 
     public static string UsageTelemetryStatePath => Path.Combine(UserDataDirectory, UsageTelemetryStateFileName);
 }

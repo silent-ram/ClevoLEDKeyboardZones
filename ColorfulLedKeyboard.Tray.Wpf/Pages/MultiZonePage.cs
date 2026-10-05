@@ -29,6 +29,7 @@ public sealed class MultiZonePage : UserControl
     private readonly System.Windows.Controls.RadioButton _layoutZones = MakeRadio("三区 + 灯带（分区机型）");
     private readonly System.Windows.Controls.RadioButton _layoutSingle = MakeRadio("单区合并（单分区机型）");
     private readonly TextBlock _layoutHint = MakeHint();
+    private readonly Button _switchModeButton;
     private Border? _lightbarSection;
     private readonly System.Windows.Controls.CheckBox _lightbarCheck = MakeCheckBox("向灯带下发命令（0xF3）");
     private readonly TextBlock _lightbarHint = MakeHint();
@@ -46,6 +47,9 @@ public sealed class MultiZonePage : UserControl
 
     public event EventHandler? Changed;
 
+    /// <summary>用户点击"切换到多分区模式"：宿主窗口应切模式并保存。</summary>
+    public event EventHandler? ModeSwitchRequested;
+
     public MultiZonePage()
     {
         var stack = new StackPanel { Margin = new Thickness(0, 0, 24, 8) };
@@ -56,7 +60,10 @@ public sealed class MultiZonePage : UserControl
             "以『左分区』配置渲染，走与灯效模式相同的单区路径）。灯带不做机型检测，确认机型具备后再开启。"));
 
         _statusText.Text = "服务端状态：读取中…";
-        stack.Children.Add(MakeCard("服务端状态", _statusText, _modeHintText));
+        _switchModeButton = MakeButton("切换到多分区模式（并保存）");
+        _switchModeButton.Visibility = Visibility.Collapsed;
+        _switchModeButton.Click += (_, _) => ModeSwitchRequested?.Invoke(this, EventArgs.Empty);
+        stack.Children.Add(MakeCard("服务端状态", _statusText, _modeHintText, _switchModeButton));
 
         var layoutRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
         layoutRow.Children.Add(_layoutZones);
@@ -169,10 +176,13 @@ public sealed class MultiZonePage : UserControl
         UpdateLayoutVisibility();
 
         // 模式一致性：多分区页只负责"每区配什么"，是否真的走多分区由灯效设置页的模式单选决定。
-        // 提示走独立元素（此前写入 _statusText 会被 RefreshStatus 立即覆盖，永远不可见）。
-        _modeHintText.Text = settings.OperatingMode != OperatingMode.MultiZone
-            ? "提示：当前模式不是多分区——请先到 灯效设置 页勾选『多分区』再保存，否则这些配置不会生效。"
+        // 提示走独立元素（此前写入 _statusText 会被 RefreshStatus 立即覆盖，永远不可见）；
+        // 并直接给一键切换按钮——用户在多分区页改配置保存时，顶层模式极易被遗忘。
+        var mismatch = settings.OperatingMode != OperatingMode.MultiZone;
+        _modeHintText.Text = mismatch
+            ? "当前模式不是多分区（配置不会生效）。点下方按钮一键切换并保存。"
             : "";
+        _switchModeButton.Visibility = mismatch ? Visibility.Visible : Visibility.Collapsed;
 
         RefreshStatus();
     }
@@ -359,6 +369,14 @@ public sealed class MultiZonePage : UserControl
         Content = text,
         GroupName = "MultiZoneLayout",
         VerticalContentAlignment = VerticalAlignment.Center,
+    };
+
+    private static Button MakeButton(string text) => new()
+    {
+        Content = text,
+        MinWidth = 200,
+        Height = 32,
+        Margin = new Thickness(0, 6, 0, 0),
     };
 
     private static CheckBox MakeCheckBox(string text) => new()

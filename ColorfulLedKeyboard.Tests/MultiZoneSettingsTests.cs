@@ -106,6 +106,9 @@ public sealed class MultiZoneSettingsTests
             var loaded = store.Load();
             Assert.Equal(OperatingMode.MultiZone, loaded.OperatingMode);
             Assert.Equal(Path.Combine(tempDir, "multizone-status.json"), AppPaths.MultiZoneStatusPath);
+            Assert.Equal(Path.Combine(tempDir, "typing-pulse.json"), AppPaths.TypingPulseStatePath);
+            Assert.Equal(Path.Combine(tempDir, "audio-applications.json"), AppPaths.AudioApplicationsStatePath);
+            Assert.Equal(Path.Combine(tempDir, "automation-status.json"), AppPaths.AutomationStatusPath);
         }
         finally
         {

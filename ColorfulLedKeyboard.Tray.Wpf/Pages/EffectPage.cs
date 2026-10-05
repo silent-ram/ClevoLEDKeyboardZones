@@ -167,6 +167,15 @@ public sealed class EffectPage : UserControl
 
     // ---- 状态载入 / 保存（移植自 WinForms LoadSettings/SaveSettings 的效果页字段）----
 
+    /// <summary>多分区页请求切换：勾选多分区模式单选（触发 OnModeChanged 的跳转与脏标记）。</summary>
+    public void SelectMultiZoneMode()
+    {
+        _modeLighting.IsChecked = false;
+        _modeMusic.IsChecked = false;
+        _modeOff.IsChecked = false;
+        _modeMultiZone.IsChecked = true;
+    }
+
     /// <summary>截图验收专用：临时强制灯效模式以展示完整参数布局，不产生脏状态。</summary>
     public void ForceLightingModeForCapture()
     {

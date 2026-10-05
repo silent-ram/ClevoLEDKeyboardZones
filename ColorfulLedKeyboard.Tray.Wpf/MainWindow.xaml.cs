@@ -191,6 +191,11 @@ public partial class MainWindow : Window
 
         var multiZonePage = new Pages.MultiZonePage();
         multiZonePage.Changed += (_, _) => UpdateSaveBar();
+        multiZonePage.ModeSwitchRequested += (_, _) =>
+        {
+            _effectPage?.SelectMultiZoneMode();
+            SaveSettings();
+        };
         _multiZonePage = multiZonePage;
         _pages.Add(multiZonePage);
         multiZonePage.LoadFromStore(new SettingsStore().Load());
