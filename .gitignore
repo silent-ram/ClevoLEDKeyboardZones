@@ -35,3 +35,4 @@ docs/superpowers/
 .zcode/
 .zcodeignore
 skills-lock.json
+dist/
