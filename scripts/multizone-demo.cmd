@@ -22,9 +22,9 @@ if %errorlevel% neq 0 (
   powershell -NoProfile -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs } catch { Write-Host ('ELEVATION DECLINED: ' + $_.Exception.Message) }"
   exit /b
 )
-cd /d "%~dp0"
+cd /d "%~dp0.."
 setlocal
-set ROOT=%~dp0
+set ROOT=%CD%\
 set SIM=%ROOT%ColorfulLedKeyboard.Simulator\bin\Release\net8.0-windows\ColorfulLedKeyboard.Simulator.exe
 set SVC=%ROOT%ColorfulLedKeyboard.Service\bin\Release\net8.0-windows\ColorfulLedKeyboard.Service.exe
 set TRAY=%ROOT%ColorfulLedKeyboard.Tray.Wpf\bin\Release\net8.0-windows10.0.22621.0\ColorfulLedKeyboard.Tray.exe
