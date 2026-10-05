@@ -74,6 +74,27 @@ public sealed class MultiZoneCooperativeEffectsTests
     }
 
     [Fact]
+    public void AmbientGradient_ThreeStops_MiddleUsesMiddleStop()
+    {
+        var effect = new LightingEffectSettings
+        {
+            Type = EffectType.AmbientGradient,
+            Color = "#FF0000",
+            PeriodMs = 6000,
+            Sequence =
+            [
+                new SequenceColor { Color = "#FF0000" },
+                new SequenceColor { Color = "#00FF00" },
+                new SequenceColor { Color = "#0000FF" },
+            ],
+        };
+        var frame = MultiZoneCooperativeEffects.ComputeFrame(effect, 3000, includeLightbar: false);
+        Assert.Equal(new RgbColor(255, 0, 0), frame[0]!.Value);
+        Assert.Equal(new RgbColor(0, 255, 0), frame[1]!.Value); // 中区取中间停靠点（非插值）
+        Assert.Equal(new RgbColor(0, 0, 255), frame[2]!.Value);
+    }
+
+    [Fact]
     public void AmbientGradient_SingleStop_AppliesEverywhere()
     {
         var effect = new LightingEffectSettings

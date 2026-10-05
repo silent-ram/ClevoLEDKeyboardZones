@@ -47,7 +47,8 @@ public static class MultiZoneCooperativeEffects
             case EffectType.AmbientGradient:
             {
                 // 氛围渐变：颜色列表映射到键盘横向——左=首色、右=末色、中间=中间停靠点
-                // （3 色及以上取中间停靠点，2 色取插值，空列表时两端取基色/补色）；
+                // （3 色及以上取中间停靠点，2 色取插值）。空序列在 Normalize 时已被回填，
+                // 此 default 分支仅为直达 API 的防御路径（基色/补色）；
                 // 整体叠加缓慢呼吸（PeriodMs 为呼吸周期，下限与 Normalize 的 300ms 一致）；灯带取中间色。
                 var period = Math.Clamp(effect.PeriodMs, 300, 30000);
                 var stops = effect.Sequence.Count > 0

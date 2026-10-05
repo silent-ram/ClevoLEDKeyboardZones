@@ -118,6 +118,26 @@ public sealed class MultiZoneSettingsTests
     }
 
     [Fact]
+    public void Normalize_KeepsOnlyFirstCooperativeZone()
+    {
+        // 协同确定性：第二处协同（及灯带上的）收敛回固定颜色——Worker 取第一个协同区做基准，
+        // 其余协同配置会被静默丢弃，Normalize 先行收敛保证"所见即所得"
+        var multi = new MultiZoneSettings
+        {
+            Zones =
+            [
+                new LightingEffectSettings { Type = EffectType.RelayFlow, Color = "#FF0000" },
+                new LightingEffectSettings { Type = EffectType.AmbientGradient, Color = "#00FF00" },
+                new LightingEffectSettings { Type = EffectType.Static },
+                new LightingEffectSettings { Type = EffectType.Static },
+            ]
+        }.Normalize();
+
+        Assert.Equal(EffectType.RelayFlow, multi.Zones[0].Type);
+        Assert.Equal(EffectType.Static, multi.Zones[1].Type); // 第二处协同收敛
+    }
+
+    [Fact]
     public void Layout_DefaultsToZones3_AndRoundTripsThroughClone()
     {
         var settings = new KeyboardSettings();
