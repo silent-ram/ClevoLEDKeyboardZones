@@ -2,12 +2,23 @@ namespace ColorfulLedKeyboard.Service;
 
 using ColorfulLedKeyboard.Core;
 using System.Diagnostics;
+using System.Text.Json;
 using System.Runtime.InteropServices;
 
 public class Worker : BackgroundService
 {
     private readonly SettingsStore _settingsStore = new();
     private readonly DchuKeyboardDevice _device = DchuKeyboardDevice.CreateDefault();
+
+    // 多分区循环的跨重入状态：配置变更（文件监视触发）会让循环退出重进，
+    // 这些字段让"没变的区"不发任何命令——单区硬件上三槽位同址，逐区重写会闪色，
+    // CUSTOM 模式命令重复发会让 EC 重置灯效状态（换色瞬间闪烁的根因）。
+    private readonly LightingFrameGenerator?[] _multiZoneGenerators = new LightingFrameGenerator?[4];
+    private readonly string?[] _multiZoneGeneratorSignatures = new string?[4];
+    private readonly RgbColor?[] _multiZoneLastColors = new RgbColor?[4];
+    private bool _multiZoneModeApplied;
+    private byte _multiZoneBrightnessLevel;
+    private bool _multiZoneActive;
     private readonly AudioSourceProvider _audioSource;
     private readonly SystemAudioLevelMeter _audioLevelMeter;
     private readonly AudioBandLevelMeter _audioBandLevelMeter;
@@ -63,6 +74,11 @@ public class Worker : BackgroundService
         {
             var settings = BuildRuntimeSettings(_settingsStore.Load());
             _settingsChanged = false;
+
+            if (_multiZoneActive && (!settings.Enabled || settings.OperatingMode != OperatingMode.MultiZone))
+            {
+                LeaveMultiZoneState();
+            }
 
             if (!settings.Enabled)
             {
@@ -183,37 +199,46 @@ public class Worker : BackgroundService
             return;
         }
 
+        _multiZoneActive = true;
         new MultiZoneStatus { CapabilityDetected = true, Active = true }.Save();
         try
         {
-            var zoneEffects = multi.Zones.Take(3).ToList();
-            var generators = zoneEffects.Select(effect => new LightingFrameGenerator(effect)).ToList();
-            var lightbarGenerator = multi.IncludeLightbar ? new LightingFrameGenerator(multi.Zones[3]) : null;
+            var zoneGenerator0 = ZoneGenerator(0, multi.Zones[0]);
+            var zoneGenerator1 = ZoneGenerator(1, multi.Zones[1]);
+            var zoneGenerator2 = ZoneGenerator(2, multi.Zones[2]);
+            var lightbarGenerator = multi.IncludeLightbar ? ZoneGenerator(3, multi.Zones[3]) : null;
             var interval = Math.Clamp(
-                Math.Min(generators.Min(generator => generator.IntervalMs),
-                    lightbarGenerator?.IntervalMs ?? int.MaxValue),
+                Math.Min(Math.Min(zoneGenerator0.IntervalMs, zoneGenerator1.IntervalMs),
+                    Math.Min(zoneGenerator2.IntervalMs, lightbarGenerator?.IntervalMs ?? int.MaxValue)),
                 20, 100);
-            // 真实三区机型需先切 CUSTOM/静态模式，分区颜色才会显示（文档 9.6 时序）；
-            // 亮度按 0..100% 换算 0xF4 原始档（0..255）。模拟器管道模式下这些命令同样
-            // 经 TCP 到达模拟器（CUSTOM 显示 + 亮度条），两条路径行为一致。
-            _device.ApplyCustomMode();
-            _device.SetZoneBrightness((byte)Math.Clamp(settings.Brightness * 255 / 100, 0, 255));
+
+            // 真实三区机型需先切 CUSTOM/静态模式，分区颜色才会显示（文档 9.6 时序）；亮度按
+            // 0..100% 换算 0xF4 原始档（0..255）。两者都只在会话首入/变化时发送：CUSTOM 重复发
+            // 会让 EC 重置灯效状态（换色瞬间闪烁的根因）。模拟器管道模式下同样经 TCP 到达。
+            if (!_multiZoneModeApplied)
+            {
+                _device.ApplyCustomMode();
+                _multiZoneModeApplied = true;
+            }
+
+            var level = (byte)Math.Clamp(settings.Brightness * 255 / 100, 0, 255);
+            if (level != _multiZoneBrightnessLevel)
+            {
+                _device.SetZoneBrightness(level);
+                _multiZoneBrightnessLevel = level;
+            }
 
             var clock = Stopwatch.StartNew();
-            RgbColor? last0 = null;
-            RgbColor? last1 = null;
-            RgbColor? last2 = null;
-            RgbColor? last3 = null;
-            // 管道模式：模拟器晚启动/断连重连会让早期帧丢失；每秒整帧重发兜底（生产路径纯去重）
+            // 管道模式：模拟器晚启动/断连重连会让早期帧丢失；每秒整帧重发兜底（真实路径纯去重）
             var resendPeriod = SimulatorPipeTransport.Enabled ? TimeSpan.FromSeconds(1) : Timeout.InfiniteTimeSpan;
             var nextResend = DateTimeOffset.UtcNow + resendPeriod;
 
             while (!stoppingToken.IsCancellationRequested && !_settingsChanged)
             {
                 var elapsed = clock.Elapsed.TotalMilliseconds;
-                var z0 = generators[0].NextAtElapsed(settings.Brightness, elapsed);
-                var z1 = generators[1].NextAtElapsed(settings.Brightness, elapsed);
-                var z2 = generators[2].NextAtElapsed(settings.Brightness, elapsed);
+                var z0 = zoneGenerator0.NextAtElapsed(settings.Brightness, elapsed);
+                var z1 = zoneGenerator1.NextAtElapsed(settings.Brightness, elapsed);
+                var z2 = zoneGenerator2.NextAtElapsed(settings.Brightness, elapsed);
                 RgbColor? z3 = null;
                 if (lightbarGenerator is not null)
                 {
@@ -223,17 +248,20 @@ public class Worker : BackgroundService
                 var resendDue = DateTimeOffset.UtcNow >= nextResend;
                 var frame = new List<(int Zone, RgbColor Color)>(4);
                 var changed = false;
-                if (z0 != last0) { frame.Add((0, z0)); last0 = z0; changed = true; }
-                if (z1 != last1) { frame.Add((1, z1)); last1 = z1; changed = true; }
-                if (z2 != last2) { frame.Add((2, z2)); last2 = z2; changed = true; }
-                if (z3 is not null && z3 != last3) { frame.Add((3, z3.Value)); last3 = z3; changed = true; }
+                if (z0 != _multiZoneLastColors[0]) { frame.Add((0, z0)); _multiZoneLastColors[0] = z0; changed = true; }
+                if (z1 != _multiZoneLastColors[1]) { frame.Add((1, z1)); _multiZoneLastColors[1] = z1; changed = true; }
+                if (z2 != _multiZoneLastColors[2]) { frame.Add((2, z2)); _multiZoneLastColors[2] = z2; changed = true; }
+                if (z3 is not null && z3 != _multiZoneLastColors[3]) { frame.Add((3, z3.Value)); _multiZoneLastColors[3] = z3; changed = true; }
                 if (!changed && resendDue)
                 {
                     frame.Add((0, z0));
                     frame.Add((1, z1));
                     frame.Add((2, z2));
                     if (z3 is not null) frame.Add((3, z3.Value));
-                    last0 = z0; last1 = z1; last2 = z2; last3 = z3;
+                    _multiZoneLastColors[0] = z0;
+                    _multiZoneLastColors[1] = z1;
+                    _multiZoneLastColors[2] = z2;
+                    _multiZoneLastColors[3] = z3;
                 }
 
                 if (frame.Count > 0)
@@ -251,10 +279,34 @@ public class Worker : BackgroundService
         }
         finally
         {
-            // 恢复 EC 亮度到全档：单区管线按"软件缩放 + EC 满亮度"的假设工作
-            try { _device.SetZoneBrightness(255); } catch (NotSupportedException) { }
             new MultiZoneStatus { CapabilityDetected = true, Active = false }.Save();
         }
+    }
+
+    /// <summary>按区取生成器：效果配置未变时复用（呼吸相位连续、该区零重写），变了才重建并强制重写。</summary>
+    private LightingFrameGenerator ZoneGenerator(int zone, LightingEffectSettings effect)
+    {
+        var signature = JsonSerializer.Serialize(effect);
+        if (_multiZoneGenerators[zone] is null || _multiZoneGeneratorSignatures[zone] != signature)
+        {
+            _multiZoneGenerators[zone] = new LightingFrameGenerator(effect);
+            _multiZoneGeneratorSignatures[zone] = signature;
+            _multiZoneLastColors[zone] = null; // 效果变化：下一帧强制重写该区
+        }
+
+        return _multiZoneGenerators[zone]!;
+    }
+
+    /// <summary>离开多分区（切模式/关闭）：恢复 EC 亮度满档（单区管线按"软件缩放 + EC 满亮度"假设工作），清空跨重入状态。</summary>
+    private void LeaveMultiZoneState()
+    {
+        try { _device.SetZoneBrightness(255); } catch (NotSupportedException) { }
+        _multiZoneActive = false;
+        _multiZoneModeApplied = false;
+        _multiZoneBrightnessLevel = 0;
+        Array.Clear(_multiZoneGenerators);
+        Array.Clear(_multiZoneGeneratorSignatures);
+        Array.Clear(_multiZoneLastColors);
     }
 
     /// <summary>按 (zone, color) 顺序下发分区颜色（经 SetZoneColor 的能力门控；调用方须已确认能力位）。</summary>
