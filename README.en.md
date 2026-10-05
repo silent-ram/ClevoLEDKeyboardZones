@@ -56,6 +56,12 @@ Since v3.5.0 the tray app runs on WPF (the `ColorfulLedKeyboard.Tray.Wpf` projec
   from capability gating and controlled by an explicit opt-in switch (0xF3 on lightbar-less
   hardware is undefined). Sharing settings.json with the main repository stays safe: the old
   service treats the unknown mode value as regular lighting and keeps its effect settings.
+- **Multi-zone on real hardware**: the service sends the same DCHU commands straight through
+  `InsydeDCHU.dll` to the real EC (`scripts/multizone-real.cmd`, run as admin; it stops and
+  auto-restarts the installed production service). Entering multi-zone sends the 9.6 sequence
+  (CUSTOM mode + 0xF4 brightness); on single-zone hardware the three slot writes collapse to
+  one register (one visible color), on true 3-zone machines zones render independently - the
+  software path is identical in both cases.
 
 ## Download & Install
 

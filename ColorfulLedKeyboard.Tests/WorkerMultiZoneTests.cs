@@ -68,6 +68,19 @@ public sealed class WorkerMultiZoneTests
     }
 
     [Fact]
+    public void ApplyCustomMode_IsGatedLikeZoneCommands()
+    {
+        var denied = new FakeDchuTransport { Features1Result = FakeDchuTransport.DefaultUnsupportedResult };
+        Assert.Throws<NotSupportedException>(() => new DchuKeyboardDevice(denied).ApplyCustomMode());
+        Assert.Empty(denied.Sent);
+
+        var allowed = new FakeDchuTransport { Features1Result = unchecked((int)0x00400000u) };
+        new DchuKeyboardDevice(allowed).ApplyCustomMode();
+        var entry = Assert.Single(allowed.Sent);
+        Assert.Equal((DchuZoneProtocol.SetDchuLedCommand, unchecked((int)0x10000000u)), entry);
+    }
+
+    [Fact]
     public void PerZoneGenerators_RenderIndependentEffects_OnSharedTimeline()
     {
         // 左：固定红；中：固定绿；右：关闭 —— 同一时刻三区互不相同，关闭区为黑

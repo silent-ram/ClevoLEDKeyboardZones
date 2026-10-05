@@ -136,6 +136,16 @@ public sealed class DchuKeyboardDevice
     }
 
     /// <summary>
+    /// 切 CUSTOM/静态模式（0x10000000，文档 9.6 时序第 1 步）。真实三区机型上分区颜色
+    /// 需在 CUSTOM 模式下才显示（clevo-xsm-wmi CUSTOM 分支同序）；门控与分区命令一致。
+    /// </summary>
+    public void ApplyCustomMode()
+    {
+        Ensure3Zone();
+        _transport.SetData(SetDchuLedCommand, DchuZoneProtocol.PackCustomModeArgs());
+    }
+
+    /// <summary>
     /// 应用静态三区状态（时序见第九节 9.6）：0x10000000 → 各区颜色（zone 升序）→ 亮度。
     /// 灯带（zone 3）是否入列由调用方传入的 zones 决定，本类不做机型检测。
     /// </summary>

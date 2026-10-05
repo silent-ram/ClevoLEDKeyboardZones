@@ -184,6 +184,12 @@ public class Worker : BackgroundService
                 Math.Min(generators.Min(generator => generator.IntervalMs),
                     lightbarGenerator?.IntervalMs ?? int.MaxValue),
                 20, 100);
+            // 真实三区机型需先切 CUSTOM/静态模式，分区颜色才会显示（文档 9.6 时序）；
+            // 亮度按 0..100% 换算 0xF4 原始档（0..255）。模拟器管道模式下这些命令同样
+            // 经 TCP 到达模拟器（CUSTOM 显示 + 亮度条），两条路径行为一致。
+            _device.ApplyCustomMode();
+            _device.SetZoneBrightness((byte)Math.Clamp(settings.Brightness * 255 / 100, 0, 255));
+
             var clock = Stopwatch.StartNew();
             RgbColor? last0 = null;
             RgbColor? last1 = null;
@@ -236,6 +242,8 @@ public class Worker : BackgroundService
         }
         finally
         {
+            // 恢复 EC 亮度到全档：单区管线按"软件缩放 + EC 满亮度"的假设工作
+            try { _device.SetZoneBrightness(255); } catch (NotSupportedException) { }
             new MultiZoneStatus { CapabilityDetected = true, Active = false }.Save();
         }
     }
