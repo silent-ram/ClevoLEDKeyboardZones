@@ -372,7 +372,7 @@ public sealed class MultiZonePage : UserControl
             // 先同步可消除"界面 0 项/实际 6 色"的状态分裂）。
             var type = effect.Type;
             if (type is EffectType.Rainbow or EffectType.Sequence or EffectType.Pulse
-                or EffectType.Heartbeat or EffectType.AmbientGradient)
+                or EffectType.Heartbeat or EffectType.AmbientGradient or EffectType.RelayFlow)
             {
                 effect.CustomSequenceColorsEnabled = type == EffectType.Rainbow;
                 var prior = effect.Sequence;
@@ -518,7 +518,7 @@ public sealed class MultiZonePage : UserControl
     {
         var type = ZoneIndexToType(_typeCombos[zone].SelectedIndex);
         var colors = _sequenceEditors[zone].Colors;
-        if (type == EffectType.AmbientGradient)
+        if (type == EffectType.AmbientGradient || type == EffectType.RelayFlow)
         {
             if (IsUnmodifiedLightingDefaults(colors))
             {
@@ -555,7 +555,7 @@ public sealed class MultiZonePage : UserControl
     {
         var index = _typeCombos[zone].SelectedIndex;
         var isOff = index == 8;
-        var usesList = index is 2 or 3 or 4 or 5 or 7; // 颜色列表驱动
+        var usesList = index is 2 or 3 or 4 or 5 or 6 or 7; // 颜色列表驱动
         var usesSequence = index is 2 or 3 or 4 or 5; // 循环类：基色被序列取代
         _swatchRows[zone].IsEnabled = !isOff && !usesSequence;
         _colorChips[zone].IsEnabled = !isOff && !usesSequence;
@@ -577,7 +577,7 @@ public sealed class MultiZonePage : UserControl
             3 => "循环呼吸：编辑颜色列表，色间带呼吸过渡。",
             4 => "脉冲：编辑颜色列表，逐色脉冲。",
             5 => "心跳：编辑颜色列表，逐色心跳。",
-            6 => "接力流动：四区共享色相时间轴，左→中→右依次推进，灯带补色（单分区硬件上表现为色相摆动）。基色=色相锚点。",
+            6 => "接力流动：颜色列表（≥2 色）随时间轴循环流过四区（左→中→右相位推进），灯带取半周期相位；仅 1 色或空时按基色色相全周摆动。",
             7 => "氛围渐变：颜色列表映射到键盘横向（首色=左、末色=右、中间停靠点=中），整体缓慢呼吸。",
             8 => "本区关闭（黑）。",
             _ => "本区常亮所选颜色。",

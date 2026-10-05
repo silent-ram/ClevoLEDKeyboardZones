@@ -95,6 +95,49 @@ public sealed class MultiZoneCooperativeEffectsTests
     }
 
     [Fact]
+    public void RelayFlow_ColorList_CyclesThroughStops()
+    {
+        var effect = new LightingEffectSettings
+        {
+            Type = EffectType.RelayFlow,
+            Color = "#FF0000",
+            PeriodMs = 3000,
+            Sequence = [new SequenceColor { Color = "#FF0000" }, new SequenceColor { Color = "#0000FF" }],
+        };
+
+        // 相位 0：左区采样到列表首色（红），叠加亮度波谷（0.35）→ (89,0,0)
+        var frame = MultiZoneCooperativeEffects.ComputeFrame(effect, 0, includeLightbar: true);
+        Assert.Equal(89, frame[0]!.Value.R);
+        Assert.Equal(0, frame[0]!.Value.G);
+        Assert.Equal(0, frame[0]!.Value.B);
+
+        // 左→中相位推进 1/3：中区颜色是红蓝插值（既非纯红也非纯蓝）
+        var mid = frame[1]!.Value;
+        Assert.True(mid.R > 0 && mid.R < 255 && mid.B > 0 && mid.B < 255,
+            $"middle should be an interpolated blend, got ({mid.R},{mid.G},{mid.B})");
+
+        // 灯带相位偏移 1/2：不同于左区
+        Assert.NotEqual(frame[0]!.Value, frame[3]!.Value);
+    }
+
+    [Fact]
+    public void RelayFlow_SingleColor_FallsBackToHueSweep()
+    {
+        var effect = new LightingEffectSettings
+        {
+            Type = EffectType.RelayFlow,
+            Color = "#FF0000",
+            PeriodMs = 3000,
+            Sequence = [new SequenceColor { Color = "#FF0000" }], // 单色：回退色相全周摆动
+        };
+
+        // 半周期处：中区相位 1/3+1/2=5/6 → 色相 -300°→60°（黄区），非红
+        var frame = MultiZoneCooperativeEffects.ComputeFrame(effect, 1500, includeLightbar: false);
+        var middle = frame[1]!.Value;
+        Assert.True(middle.G > 100, $"hue sweep expected, got ({middle.R},{middle.G},{middle.B})");
+    }
+
+    [Fact]
     public void AmbientGradient_SingleStop_AppliesEverywhere()
     {
         var effect = new LightingEffectSettings

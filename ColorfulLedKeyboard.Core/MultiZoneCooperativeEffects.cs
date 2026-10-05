@@ -22,24 +22,30 @@ public static class MultiZoneCooperativeEffects
         {
             case EffectType.RelayFlow:
             {
-                // 接力流动：同一条色相时间轴，左→中→右依次相位偏移 1/3 周期；
-                // 基色作为色相锚点做全彩循环（锚点色相 = 波形中心），灯带取补色。
+                // 接力流动：同一条时间轴，左→中→右依次相位偏移 1/3 周期，灯带偏移 1/2。
+                // 序列 ≥2 色：颜色列表随时间轴循环流过四区（SampleStops 循环插值）；
+                // 空列表/单色：按基色色相做全周摆动（锚点色相 = 波形中心）。
                 var period = Math.Clamp(effect.PeriodMs, 300, 30000);
-                var baseHue = HueOf(baseColor);
+                var stops = effect.Sequence.Count > 0
+                    ? effect.Sequence.Select(item => RgbColor.FromHex(item.Color)).ToList()
+                    : new List<RgbColor>();
                 var phase = elapsedMs % period / (double)period; // 0..1
                 for (var zone = 0; zone < 3; zone++)
                 {
                     var zonePhase = (phase + zone / 3d) % 1d;
-                    var hue = baseHue + (zonePhase - 0.5) * 360; // 锚点居中摆动
                     var wave = 0.35 + 0.65 * (0.5 - 0.5 * Math.Cos(zonePhase * Math.PI * 2)); // 亮度波：接力感
-                    result[zone] = ScaleValue(RgbColor.FromHsv(hue, 1, 1), wave);
+                    result[zone] = stops.Count >= 2
+                        ? ScaleValue(SampleStops(stops, zonePhase), wave)
+                        : ScaleValue(RgbColor.FromHsv(HueOf(baseColor) + (zonePhase - 0.5) * 360, 1, 1), wave);
                 }
 
                 if (includeLightbar)
                 {
-                    var barPhase = (phase + 0.5) % 1d; // 灯带与中区互补相位
+                    var barPhase = (phase + 0.5) % 1d;
                     var barWave = 0.35 + 0.65 * (0.5 - 0.5 * Math.Cos(barPhase * Math.PI * 2));
-                    result[3] = ScaleValue(RgbColor.FromHsv(baseHue + 180, 1, 1), barWave);
+                    result[3] = stops.Count >= 2
+                        ? ScaleValue(SampleStops(stops, barPhase), barWave)
+                        : ScaleValue(RgbColor.FromHsv(HueOf(baseColor) + 180, 1, 1), barWave);
                 }
 
                 break;
@@ -102,6 +108,18 @@ public static class MultiZoneCooperativeEffects
 
     public static bool IsCooperative(EffectType type) =>
         type is EffectType.RelayFlow or EffectType.AmbientGradient;
+
+    /// <summary>沿停靠点序列循环采样：t∈[0,1) 映射到首尾相接的相邻停靠点插值。</summary>
+    private static RgbColor SampleStops(IReadOnlyList<RgbColor> stops, double t)
+    {
+        t -= Math.Floor(t);
+        var scaled = t * stops.Count;
+        var index = (int)Math.Floor(scaled);
+        var fraction = scaled - index;
+        var a = stops[index % stops.Count];
+        var b = stops[(index + 1) % stops.Count];
+        return RgbColor.Lerp(a, b, fraction);
+    }
 
     /// <summary>RGB 颜色的色相（0..360）。</summary>
     public static double HueOf(RgbColor color)
