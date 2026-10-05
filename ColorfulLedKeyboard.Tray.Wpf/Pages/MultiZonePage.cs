@@ -128,6 +128,10 @@ public sealed class MultiZonePage : UserControl
                     EffectType.Off => 3,
                     _ => 0,
                 };
+                // 把已存颜色画到指示块（此前缺失：ApplyTo 从指示块读色，未初始化时
+                // 色板按钮点击虽然改了背景，但页面重建/回退后 ApplyTo 把默认红写回去）
+                _colorChips[zone].Background = new SolidColorBrush(
+                    (Color)ColorConverter.ConvertFromString(multi.Zones[zone].Color));
                 UpdateZoneControls(zone);
             }
             _lightbarCheck.IsChecked = multi.IncludeLightbar;
